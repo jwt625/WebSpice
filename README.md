@@ -1,5 +1,9 @@
 # WebSpice
 
+<p align="center">
+  <img src="static/icon.svg" alt="WebSpice Icon" width="200" height="200">
+</p>
+
 A browser-based SPICE circuit simulator with a minimal GUI. Runs entirely client-side using NGSpice compiled to WebAssembly.
 
 ## Features

@@ -194,6 +194,15 @@
 		return `${(v*1e12).toFixed(1)}p${u}`;
 	}
 
+	function getTraceUnit(traceName: string): string {
+		const trace = traces.find(t => t.name === traceName);
+		if (!trace) return '';
+		if (trace.type === 'current') return 'A';
+		if (trace.type === 'voltage') return 'V';
+		if (trace.type === 'frequency') return 'Hz';
+		return '';
+	}
+
 	function drawHoverLine(ctx: CanvasRenderingContext2D, h: number) {
 		const d = getDpr(), px = mousePos.x * d;
 		ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
@@ -238,7 +247,8 @@
 		ctx.font = '10px monospace'; let yo = by + 28;
 		for (const [name, val] of vals) {
 			const t = traces.find(tr => tr.name === name); if (!t?.visible) continue;
-			ctx.fillStyle = rgb(t.color); ctx.fillText(formatValue(val, 'V'), bx + 4, yo); yo += lh;
+			const unit = getTraceUnit(name);
+			ctx.fillStyle = rgb(t.color); ctx.fillText(formatValue(val, unit), bx + 4, yo); yo += lh;
 		}
 	}
 
@@ -275,7 +285,7 @@
 		const xR = bounds.xMax - bounds.xMin, yR = bounds.yMax - bounds.yMin;
 		const xS = niceStep(xR, Math.max(4, Math.round(w/sp))), yS = niceStep(yR, Math.max(4, Math.round(h/sp)));
 		for (let x = Math.ceil(bounds.xMin/xS)*xS; x <= bounds.xMax; x += xS) ctx.fillText(formatValue(x, 's'), toX(x,w)+2, h-4*d);
-		for (let y = Math.ceil(bounds.yMin/yS)*yS; y <= bounds.yMax; y += yS) ctx.fillText(formatValue(y, 'V'), 4*d, toY(y,h)-2*d);
+		for (let y = Math.ceil(bounds.yMin/yS)*yS; y <= bounds.yMax; y += yS) ctx.fillText(formatValue(y, ''), 4*d, toY(y,h)-2*d);
 	}
 
 	function handleMouseDown(e: MouseEvent) {
@@ -489,8 +499,9 @@
 					{@const values = getTraceValuesAtX(mousePos.dataX)}
 					{@const val = values.get(trace.name)}
 					{#if val !== undefined}
+						{@const unit = getTraceUnit(trace.name)}
 						<div class="tooltip-row" style="color: rgb({trace.color.r * 255}, {trace.color.g * 255}, {trace.color.b * 255})">
-							{trace.name}: {formatValue(val, 'V')}
+							{trace.name}: {formatValue(val, unit)}
 						</div>
 					{/if}
 				{/if}
