@@ -2,10 +2,21 @@
 	import { onMount } from 'svelte';
 	import type { ViewTransform, GridSettings, Point, Schematic, Component, ComponentType, Rotation, EditorMode, WireDrawState, Wire, Junction, ProbeType } from './types';
 	import { DEFAULT_VIEW, DEFAULT_GRID, DEFAULT_WIRE_DRAW, MODE_SHORTCUTS, getModeName } from './types';
-	import { renderComponent, hitTestComponent, nextRotation } from './component-renderer';
+	import { renderComponent, nextRotation } from './component-renderer';
 	import { COMPONENT_DEFS, getComponentByShortcut } from './component-defs';
 	import { COMPONENT_PREFIX } from '$lib/netlist/types';
-import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/connectivity';
+	import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/connectivity';
+	import {
+		screenToSchematic as screenToSchematicUtil,
+		schematicToScreen as schematicToScreenUtil,
+		snapToGrid as snapToGridUtil,
+		getWireSegments,
+		getAllPinPositions,
+		findComponentAt as findComponentAtUtil,
+		findWireAt as findWireAtUtil,
+		findJunctionAt as findJunctionAtUtil,
+		findDirectiveAtPos as findDirectiveAtPosUtil
+	} from './canvas';
 
 	interface ProbeEvent {
 		type: ProbeType;
@@ -115,32 +126,30 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		render();
 	}
 
-	// Convert screen coords to schematic coords
-	function screenToSchematic(sx: number, sy: number): Point {
-		const dpr = getDpr();
-		return {
-			x: (sx * dpr - view.offsetX) / view.scale,
-			y: (sy * dpr - view.offsetY) / view.scale
-		};
-	}
+	// Wrapper functions that use component state
+	const screenToSchematic = (sx: number, sy: number): Point =>
+		screenToSchematicUtil(sx, sy, view, getDpr());
 
-	// Convert schematic coords to screen coords
-	function schematicToScreen(px: number, py: number): Point {
-		const dpr = getDpr();
-		return {
-			x: (px * view.scale + view.offsetX) / dpr,
-			y: (py * view.scale + view.offsetY) / dpr
-		};
-	}
+	const schematicToScreen = (px: number, py: number): Point =>
+		schematicToScreenUtil(px, py, view, getDpr());
 
-	// Snap to grid
-	function snapToGrid(p: Point): Point {
-		if (!grid.snapEnabled) return p;
-		return {
-			x: Math.round(p.x / grid.size) * grid.size,
-			y: Math.round(p.y / grid.size) * grid.size
-		};
-	}
+	const snapToGrid = (p: Point): Point =>
+		snapToGridUtil(p, grid.size, grid.snapEnabled);
+
+	// Hit testing wrapper functions
+	const findComponentAt = (pos: Point): Component | null =>
+		findComponentAtUtil(pos, schematic.components);
+
+	const findWireAt = (pos: Point, tolerance: number = 5): Wire | null =>
+		findWireAtUtil(pos, schematic.wires, tolerance);
+
+	const findJunctionAt = (pos: Point, tolerance: number = 8): Junction | null =>
+		findJunctionAtUtil(pos, schematic.junctions, tolerance);
+
+	const findDirectiveAtPos = (pos: Point): import('./types').SpiceDirective | null => {
+		if (!ctx) return null;
+		return findDirectiveAtPosUtil(pos, schematic.directives, { ctx, viewScale: view.scale });
+	};
 
 	function render() {
 		if (!ctx || !canvas) return;
@@ -253,68 +262,12 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		drawJunctions();
 	}
 
-	/** Get Manhattan-style wire segments from start to end */
-	function getWireSegments(start: Point, end: Point, direction: 'horizontal-first' | 'vertical-first'): { x1: number; y1: number; x2: number; y2: number }[] {
-		const segments: { x1: number; y1: number; x2: number; y2: number }[] = [];
-
-		if (start.x === end.x && start.y === end.y) {
-			return segments;  // No wire needed
-		}
-
-		if (start.x === end.x || start.y === end.y) {
-			// Straight line
-			segments.push({ x1: start.x, y1: start.y, x2: end.x, y2: end.y });
-		} else if (direction === 'horizontal-first') {
-			// Horizontal then vertical
-			segments.push({ x1: start.x, y1: start.y, x2: end.x, y2: start.y });
-			segments.push({ x1: end.x, y1: start.y, x2: end.x, y2: end.y });
-		} else {
-			// Vertical then horizontal
-			segments.push({ x1: start.x, y1: start.y, x2: start.x, y2: end.y });
-			segments.push({ x1: start.x, y1: end.y, x2: end.x, y2: end.y });
-		}
-
-		return segments;
-	}
-
-	/** Get world-space pin positions for a component */
-	function getComponentPinPositions(comp: Component): Point[] {
-		const def = COMPONENT_DEFS[comp.type];
-		if (!def) return [];
-
-		const rad = (comp.rotation * Math.PI) / 180;
-		const cos = Math.cos(rad);
-		const sin = Math.sin(rad);
-
-		return def.pins.map(pin => {
-			// Apply mirror
-			let px = comp.mirror ? -pin.x : pin.x;
-			let py = pin.y;
-			// Apply rotation
-			const rx = px * cos - py * sin;
-			const ry = px * sin + py * cos;
-			// Translate to world position
-			return { x: comp.x + rx, y: comp.y + ry };
-		});
-	}
-
-	/** Get all component pin positions in the schematic */
-	function getAllPinPositions(): Set<string> {
-		const pins = new Set<string>();
-		for (const comp of schematic.components) {
-			for (const pos of getComponentPinPositions(comp)) {
-				pins.add(`${pos.x},${pos.y}`);
-			}
-		}
-		return pins;
-	}
-
 	/** Draw junction dots - red for connections, following LTSpice style */
 	function drawJunctions() {
 		if (!ctx) return;
 
 		const dotRadius = 4 / view.scale;
-		const pinPositions = getAllPinPositions();
+		const pinPositions = getAllPinPositions(schematic.components);
 
 		// Count wire endpoints at each position
 		const wireEndpoints: Map<string, number> = new Map();
@@ -438,31 +391,6 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 			ctx.fillStyle = isSelected ? '#ffff88' : '#cc88ff';
 			ctx.fillText(text, directive.x, directive.y);
 		}
-	}
-
-	/** Find directive at a given position - returns the directive or null */
-	function findDirectiveAtPos(pos: Point): import('./types').SpiceDirective | null {
-		if (!ctx || !schematic.directives || schematic.directives.length === 0) return null;
-
-		const fontSize = Math.max(10, 14 / view.scale);
-		ctx.font = `${fontSize}px monospace`;
-
-		for (const directive of schematic.directives) {
-			if (directive.x === undefined || directive.y === undefined) continue;
-
-			const text = directive.text;
-			const metrics = ctx.measureText(text);
-			const padding = 3 / view.scale;
-			const bgWidth = metrics.width + padding * 2;
-			const bgHeight = fontSize + padding * 2;
-
-			// Check if click is within directive bounds
-			if (pos.x >= directive.x - padding && pos.x <= directive.x - padding + bgWidth &&
-				pos.y >= directive.y - padding && pos.y <= directive.y - padding + bgHeight) {
-				return directive;
-			}
-		}
-		return null;
 	}
 
 	/** Draw a voltage probe shape (pointed tip like multimeter probe) */
@@ -892,17 +820,6 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		}
 	}
 
-	/** Find junction at position */
-	function findJunctionAt(pos: Point, tolerance: number = 8): Junction | null {
-		for (const junction of schematic.junctions) {
-			const dist = Math.hypot(pos.x - junction.x, pos.y - junction.y);
-			if (dist <= tolerance) {
-				return junction;
-			}
-		}
-		return null;
-	}
-
 	/** Create a junction at the given position */
 	function createJunctionAt(pos: Point): boolean {
 		// Check if junction already exists at this position
@@ -1104,48 +1021,6 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		if (onprobe) {
 			onprobe({ type, node1, node2, componentId, label });
 		}
-	}
-
-	/** Find component at position */
-	function findComponentAt(pos: Point): Component | null {
-		for (let i = schematic.components.length - 1; i >= 0; i--) {
-			const comp = schematic.components[i];
-			if (hitTestComponent(comp, pos.x, pos.y)) {
-				return comp;
-			}
-		}
-		return null;
-	}
-
-	/** Find wire at position */
-	function findWireAt(pos: Point, tolerance: number = 5): Wire | null {
-		for (let i = schematic.wires.length - 1; i >= 0; i--) {
-			const wire = schematic.wires[i];
-			if (hitTestWire(wire, pos.x, pos.y, tolerance)) {
-				return wire;
-			}
-		}
-		return null;
-	}
-
-	/** Hit test for wire segment */
-	function hitTestWire(wire: Wire, px: number, py: number, tolerance: number): boolean {
-		// Distance from point to line segment
-		const dx = wire.x2 - wire.x1;
-		const dy = wire.y2 - wire.y1;
-		const len2 = dx * dx + dy * dy;
-
-		if (len2 === 0) {
-			// Wire is a point
-			return Math.hypot(px - wire.x1, py - wire.y1) <= tolerance;
-		}
-
-		// Project point onto line
-		const t = Math.max(0, Math.min(1, ((px - wire.x1) * dx + (py - wire.y1) * dy) / len2));
-		const projX = wire.x1 + t * dx;
-		const projY = wire.y1 + t * dy;
-
-		return Math.hypot(px - projX, py - projY) <= tolerance;
 	}
 
 	function placeComponent() {
