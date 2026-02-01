@@ -201,10 +201,10 @@ Created `scripts/generate-voltage-multiplier.ts` for programmatic schematic gene
    - Simplified wiring from 8 to 6 wires
    - [PASS] Topologically equivalent to target netlist
 
-2. **Voltage Multiplier Schematic** - RESOLVED
+2. **Voltage Multiplier Schematic** - IN PROGRESS
    - Generated programmatically with correct 26-component circuit
-   - [PASS] Topologically equivalent to target netlist
-   - Minor: Capacitor values show `1u` instead of `{CC}` parameter (functionally equivalent)
+   - [FAIL] Manhattan routing creates short circuit (all components connected to ground)
+   - See Known Issues section for details
 
 ## Future Enhancements
 
@@ -246,9 +246,41 @@ Created `scripts/generate-voltage-multiplier.ts` for programmatic schematic gene
 - GitHub links open in new tabs
 - Responsive layout tested on desktop (mobile testing pending)
 
+## Known Issues
+
+### Deployment Path Issue - FIXED
+- Examples failed to load when deployed to `/WebSpice` subroute
+- Fixed: Added `base` path import in `LandingPage.svelte`
+- `+page.svelte` already handles paths correctly, no changes needed
+
+### Voltage Multiplier Schematic Issues - IN PROGRESS
+
+**Issue 1: Manhattan Routing**
+- Requirement: Wires must be Manhattan-style (horizontal/vertical only), no diagonal routing
+- Status: Implementation creates massive short circuit
+- Problem: Manhattan routing creates shared wire endpoints that connect unintended nets
+- Attempted fixes:
+  1. Midpoint component placement - all components at same x-coordinate, wires share endpoints
+  2. Adjacent component placement - horizontal wires at same y-coordinate connect everything
+  3. Unique y-coordinate routing - still creates shared endpoints, everything connects to ground
+- Current result: All 27 components show as connected to node 0 (ground) in generated netlist
+- Root cause: Wire endpoints connect when they touch. Manhattan routing from multiple components to shared nodes creates intermediate points that unintentionally connect.
+
+**Issue 2: Overlapping Parallel Components**
+- Components in parallel (same two nodes) are perfectly overlapping
+- Requirement: Minimum 6 grid points separation
+- Status: Not started (blocked by routing issue)
+- Example: C7 and Rload both connect n13 to 0
+
+**Issue 3: Missing Component Models**
+- `.model D1N4148 ...` directive missing from generated netlist
+- Netlist generator does not support component model definitions
+- Status: Not started (future feature)
+- Requires: Model storage in schematic, model output in netlist generator
+
 ## Conclusion
 
 The landing page provides a professional entry point to WebSpice and improves discoverability of example circuits. The reorganized examples system is more maintainable and scalable.
 
-**Update 2026-02-01:** All schematic connectivity issues have been resolved. Both example circuits (RC lowpass filter and voltage multiplier) now generate netlists that are topologically equivalent to their target netlists. The voltage multiplier was regenerated programmatically, demonstrating a scalable approach for creating complex circuit schematics. Automated testing infrastructure ensures schematic correctness going forward.
+**Update 2026-02-01 (Morning):** RC lowpass filter schematic fixed and verified. Voltage multiplier programmatic generation created but Manhattan routing implementation has critical connectivity issues requiring fundamental redesign.
 

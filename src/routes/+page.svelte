@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { base } from '$app/paths';
 	import { initSimulation, runSimulation, terminateSimulation, type SimulationResult, type RealDataType } from '$lib/simulation';
 	import { TabbedWaveformViewer, type TraceData, type WaveformTab, getTraceColor } from '$lib/waveform';
 	import { NetlistEditor } from '$lib/editor';
@@ -458,14 +459,14 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 			status = `Loading ${example.name}...`;
 
 			// Load schematic JSON
-			const schematicResponse = await fetch(example.schematicFile);
+			const schematicResponse = await fetch(`${base}${example.schematicFile}`);
 			if (!schematicResponse.ok) {
 				throw new Error(`Failed to load schematic: ${schematicResponse.statusText}`);
 			}
 			const schematicData = await schematicResponse.json();
 
 			// Load netlist
-			const netlistResponse = await fetch(example.netlistFile);
+			const netlistResponse = await fetch(`${base}${example.netlistFile}`);
 			if (!netlistResponse.ok) {
 				throw new Error(`Failed to load netlist: ${netlistResponse.statusText}`);
 			}
