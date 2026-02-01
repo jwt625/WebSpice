@@ -6,6 +6,8 @@
 
 A browser-based SPICE circuit simulator with a minimal GUI. Runs entirely client-side using NGSpice compiled to WebAssembly.
 
+![WebSpice Screenshot](static/example.png)
+
 ## Features
 
 - **Schematic Editor**: Canvas-based editor with component placement, wire routing, and grid snapping
