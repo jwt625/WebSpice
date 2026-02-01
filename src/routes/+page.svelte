@@ -4,7 +4,7 @@
 	import { TabbedWaveformViewer, type TraceData, type WaveformTab, getTraceColor } from '$lib/waveform';
 	import { NetlistEditor } from '$lib/editor';
 	import { SchematicCanvas, type Schematic, type Probe } from '$lib/schematic';
-	import { ResizablePanel } from '$lib/components';
+	import { ResizablePanel, HelpModal } from '$lib/components';
 	import { schematicToNetlist, generateNodeLabels, calculateComponentCurrent } from '$lib/netlist';
 
 	let status = $state('Not initialized');
@@ -12,6 +12,7 @@
 	let timeData = $state<number[]>([]);
 	let schematic = $state<Schematic>({ components: [], wires: [], junctions: [] });
 	let probes = $state<Probe[]>([]);
+	let showHelp = $state(false);
 
 	// Waveform tabs
 	let waveformTabs = $state<WaveformTab[]>([{ id: 'default', name: 'Plot 1', traces: [] }]);
@@ -51,6 +52,13 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 			status = 'NGSpice ready';
 		} catch (err) {
 			status = `Init failed: ${err}`;
+		}
+
+		// Show help modal on first visit
+		const hasSeenHelp = localStorage.getItem('webspice-help-seen');
+		if (!hasSeenHelp) {
+			showHelp = true;
+			localStorage.setItem('webspice-help-seen', 'true');
 		}
 	});
 
@@ -294,6 +302,19 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 	}
 
 	function handleKeyDown(e: KeyboardEvent) {
+		// Don't handle shortcuts if typing in a text input
+		const target = e.target as HTMLElement;
+		const isTextInput = target.tagName === 'TEXTAREA' ||
+			(target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'text') ||
+			target.isContentEditable;
+
+		// H key to show help (only when not in text input)
+		if (!isTextInput && (e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			e.preventDefault();
+			showHelp = true;
+			return;
+		}
+
 		// Ctrl+B to run simulation
 		if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
 			e.preventDefault();
@@ -420,6 +441,10 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 		{#if getTotalTraceCount() > 0}
 			<span class="trace-count">{getTotalTraceCount()} traces</span>
 		{/if}
+		<div class="toolbar-spacer"></div>
+		<button class="help-btn" onclick={() => showHelp = true} title="Show keyboard shortcuts (H)">
+			?
+		</button>
 	</header>
 	<main class="workspace">
 		<ResizablePanel title="Netlist" direction="horizontal" initialSize={300} minSize={200} bind:collapsed={netlistCollapsed}>
@@ -459,6 +484,8 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 	<footer class="statusbar">
 		<span>{status}</span>
 	</footer>
+
+	<HelpModal bind:visible={showHelp} />
 </div>
 
 <style>
@@ -509,9 +536,31 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 		background: var(--border-primary);
 	}
 
+	.toolbar-spacer {
+		flex: 1;
+	}
+
 	.trace-count {
 		font-size: var(--font-size-sm);
 		color: var(--text-secondary);
+	}
+
+	.help-btn {
+		background: var(--accent-blue) !important;
+		color: white !important;
+		font-weight: bold;
+		font-size: 16px;
+		width: 28px;
+		height: 28px;
+		padding: 0 !important;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 50%;
+	}
+
+	.help-btn:hover:not(:disabled) {
+		background: var(--accent-green) !important;
 	}
 
 	.workspace {
