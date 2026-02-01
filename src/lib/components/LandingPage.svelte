@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { base } from '$app/paths';
 
 	interface Example {
 		id: string;
@@ -23,7 +24,8 @@
 
 	onMount(async () => {
 		try {
-			const response = await fetch('/examples/examples.json');
+			// @ts-ignore - base is deprecated but still functional
+			const response = await fetch(`${base}/examples/examples.json`);
 			if (!response.ok) {
 				throw new Error(`Failed to load examples: ${response.statusText}`);
 			}

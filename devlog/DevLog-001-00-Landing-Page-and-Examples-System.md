@@ -150,18 +150,61 @@ Follows existing format from `schematic-1769924217177.json`:
 }
 ```
 
+## Debugging Approach (2026-02-01 Update)
+
+Created automated testing script `scripts/test-netlist-generation.ts` to verify schematic correctness:
+
+**Features:**
+- Loads schematic JSON and generates netlist using codebase functions
+- Compares generated netlist with target netlist
+- Checks topological equivalence (same circuit topology with different node names)
+- Shows detailed connectivity analysis and pin connections
+- No emojis (project requirement)
+
+**Usage:**
+```bash
+pnpm exec tsx scripts/test-netlist-generation.ts [schematic.json] [target.cir]
+```
+
+**RC Low-Pass Filter Fix:**
+- **Issue Found:** Resistor had `rotation: 90` causing pins to be at wrong positions
+- **Fix Applied:** Changed rotation to 0°, simplified wiring from 8 to 6 wires
+- **Result:** [PASS] Topologically equivalent to target netlist
+
+## Programmatic Schematic Generation (2026-02-01 Update)
+
+Created `scripts/generate-voltage-multiplier.ts` for programmatic schematic generation:
+
+**Approach:**
+1. Define node positions in a grid layout
+2. Create helper function to place components between nodes
+3. Automatically generate wires and junctions
+4. Generate all 26 components (12 diodes, 12 capacitors, 1 resistor, 1 voltage source)
+
+**Benefits:**
+- Systematic layout for complex circuits
+- Easier to maintain and modify
+- Guaranteed correct connectivity
+- Scalable to larger circuits
+
+**Voltage Multiplier Generation:**
+- 6-stage Cockcroft-Walton voltage multiplier
+- 27 components total (including ground symbol)
+- 53 wires, 52 junctions
+- Grid-based layout with 150px horizontal and 100px vertical spacing
+- [PASS] Topologically equivalent to target netlist
+
 ## Known Issues
 
-1. **RC Low-Pass Filter Schematic Connectivity**
-   - Generated netlist does not match expected topology
-   - Wire connections need to be corrected
-   - Expected: `R1 in out 1k`, `C1 out 0 1u`, `Vin in 0 PULSE(...)`
-   - Requires debugging of component pin connections and wire routing
+1. **RC Low-Pass Filter Schematic** - RESOLVED
+   - Fixed rotation from 90° to 0°
+   - Simplified wiring from 8 to 6 wires
+   - [PASS] Topologically equivalent to target netlist
 
-2. **Voltage Multiplier Schematic**
-   - Currently shows simplified representation
-   - Full 6-stage circuit with 12 diodes and 12 capacitors not fully represented in schematic
-   - Netlist is complete and functional
+2. **Voltage Multiplier Schematic** - RESOLVED
+   - Generated programmatically with correct 26-component circuit
+   - [PASS] Topologically equivalent to target netlist
+   - Minor: Capacitor values show `1u` instead of `{CC}` parameter (functionally equivalent)
 
 ## Future Enhancements
 
@@ -190,8 +233,10 @@ Follows existing format from `schematic-1769924217177.json`:
 - `src/lib/components/index.ts`
 - `src/routes/+page.svelte`
 - `static/examples/examples.json` (new)
-- `static/examples/rc-lowpass.json` (new)
-- `static/examples/voltage-multiplier.json` (new)
+- `static/examples/rc-lowpass.json` (new, fixed 2026-02-01)
+- `static/examples/voltage-multiplier.json` (new, regenerated 2026-02-01)
+- `scripts/test-netlist-generation.ts` (new, 2026-02-01)
+- `scripts/generate-voltage-multiplier.ts` (new, 2026-02-01)
 
 ## Testing Notes
 
@@ -203,5 +248,7 @@ Follows existing format from `schematic-1769924217177.json`:
 
 ## Conclusion
 
-The landing page provides a professional entry point to WebSpice and improves discoverability of example circuits. The reorganized examples system is more maintainable and scalable. Schematic connectivity issues need to be resolved to ensure examples load correctly into the schematic editor.
+The landing page provides a professional entry point to WebSpice and improves discoverability of example circuits. The reorganized examples system is more maintainable and scalable.
+
+**Update 2026-02-01:** All schematic connectivity issues have been resolved. Both example circuits (RC lowpass filter and voltage multiplier) now generate netlists that are topologically equivalent to their target netlists. The voltage multiplier was regenerated programmatically, demonstrating a scalable approach for creating complex circuit schematics. Automated testing infrastructure ensures schematic correctness going forward.
 
