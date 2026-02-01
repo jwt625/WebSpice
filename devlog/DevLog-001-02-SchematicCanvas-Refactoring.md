@@ -126,7 +126,10 @@ interface DrawContext {
 - [x] Phase 4: Mode handlers (1,322 -> 1,296 lines, -26 lines)
   - Extracted `isPointOnWireSegment` to geometry.ts
   - Note: Handlers themselves (handleWireClick, handleDeleteClick, etc.) are tightly coupled with Svelte state mutations and are better left in the main component
-- [ ] Phase 5: Drawing functions
+- [x] Phase 5: Drawing functions (1,296 -> 1,183 lines, -113 lines)
+  - Created src/lib/schematic/canvas/drawing.ts (217 lines)
+  - Extracted: drawGrid, drawOrigin, drawWires, drawJunctions, drawNodeLabels, drawDirectives
+  - Note: drawComponents and drawProbeCursor remain in main component due to tight coupling with placement state and probe state
 - [ ] Phase 6: Final cleanup
 
 ## Testing Strategy
