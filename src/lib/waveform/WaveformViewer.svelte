@@ -3,7 +3,15 @@
 	import { WebglPlot, WebglLine, ColorRGBA } from 'webgl-plot';
 	import type { TraceData, ViewBounds, Cursor } from './types';
 
-	let { traces = [], timeData = [] }: { traces: TraceData[]; timeData: number[] } = $props();
+	let {
+		traces = [],
+		timeData = [],
+		ontracetoggle
+	}: {
+		traces: TraceData[];
+		timeData: number[];
+		ontracetoggle?: (traceId: string) => void;
+	} = $props();
 
 	let gridCanvas: HTMLCanvasElement;
 	let canvas: HTMLCanvasElement;
@@ -64,9 +72,20 @@
 		render();
 	}
 
+	// Track trace count to detect when traces are added/removed (not just visibility changes)
+	let previousTraceCount = 0;
+
 	$effect(() => {
 		if (traces.length > 0 && timeData.length > 0 && initialized && wglp) {
-			untrack(() => { updateTraces(); autoscale(); render(); });
+			const shouldAutoscale = traces.length !== previousTraceCount;
+			previousTraceCount = traces.length;
+			untrack(() => {
+				updateTraces();
+				if (shouldAutoscale) {
+					autoscale();
+				}
+				render();
+			});
 		}
 	});
 
@@ -449,12 +468,16 @@
 	<canvas bind:this={overlayCanvas} class="overlay-canvas"></canvas>
 	<div class="legend">
 		{#each traces as trace}
-			{#if trace.visible}
-				<div class="legend-item" style="color: rgb({trace.color.r * 255}, {trace.color.g * 255}, {trace.color.b * 255})">
-					<span class="legend-color"></span>
-					{trace.name}
-				</div>
-			{/if}
+			<button
+				class="legend-item"
+				class:hidden={!trace.visible}
+				style="color: rgb({trace.color.r * 255}, {trace.color.g * 255}, {trace.color.b * 255}); opacity: {trace.visible ? 1 : 0.4}"
+				onclick={() => ontracetoggle?.(trace.id)}
+				title="Click to {trace.visible ? 'hide' : 'show'} trace"
+			>
+				<span class="legend-color"></span>
+				{trace.name}
+			</button>
 		{/each}
 	</div>
 
@@ -518,14 +541,32 @@
 		padding: 4px 8px;
 		font-size: 11px;
 		font-family: monospace;
-		pointer-events: none;
+		pointer-events: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
 	}
 
 	.legend-item {
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		padding: 2px 0;
+		padding: 2px 4px;
+		background: transparent;
+		border: none;
+		font-family: monospace;
+		font-size: 11px;
+		cursor: pointer;
+		text-align: left;
+		transition: background 0.1s;
+	}
+
+	.legend-item:hover {
+		background: rgba(255, 255, 255, 0.1);
+	}
+
+	.legend-item.hidden {
+		text-decoration: line-through;
 	}
 
 	.legend-color {

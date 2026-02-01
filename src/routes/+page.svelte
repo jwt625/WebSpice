@@ -76,10 +76,42 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 					break;
 				}
 			}
-			// Note: Traces are added via probing, not automatically
+
+			// Auto-populate all simulation variables to the active tab
+			addAllSimulationTracesToActiveTab();
 		} catch (err) {
 			status = `Simulation error: ${err}`;
 		}
+	}
+
+	/** Add all simulation variables as traces to the active tab */
+	function addAllSimulationTracesToActiveTab() {
+		if (!simResult || simResult.dataType !== 'real') return;
+
+		const activeTab = waveformTabs.find(t => t.id === activeTabId);
+		if (!activeTab) return;
+
+		const traces: TraceData[] = [];
+		let colorIndex = 0;
+
+		// Add all data except 'time' type
+		for (const data of simResult.data) {
+			if (data.type === 'time') continue; // Skip time axis
+
+			traces.push({
+				id: data.name,
+				name: data.name,
+				type: data.type,
+				values: data.values as number[],
+				color: getTraceColor(colorIndex++),
+				visible: true
+			});
+		}
+
+		// Update the active tab with all traces
+		waveformTabs = waveformTabs.map(tab =>
+			tab.id === activeTabId ? { ...tab, traces } : tab
+		);
 	}
 
 	/** Check if a simulation data entry matches a specific probe (for voltage and current, not voltage-diff) */

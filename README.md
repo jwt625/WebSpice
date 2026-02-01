@@ -35,7 +35,7 @@ A browser-based SPICE circuit simulator with a minimal GUI. Runs entirely client
 - **Framework**: SvelteKit 2 + Svelte 5
 - **Build**: Vite
 - **Language**: TypeScript
-- **Simulation**: [eecircuit-engine](https://github.com/nickmitchko/eecircuit-engine) (NGSpice WASM)
+- **Simulation**: [eecircuit](https://github.com/eelab-dev/EEcircuit) (NGSpice WASM)
 - **Editor**: CodeMirror 6 (SPICE syntax highlighting)
 - **Plotting**: webgl-plot
 - **Web Workers**: Comlink

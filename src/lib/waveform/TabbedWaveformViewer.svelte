@@ -49,6 +49,21 @@
 		}
 	}
 
+	function handleTraceToggle(traceId: string) {
+		// Toggle trace visibility
+		tabs = tabs.map(tab => {
+			if (tab.id === activeTabId) {
+				return {
+					...tab,
+					traces: tab.traces.map(t =>
+						t.id === traceId ? { ...t, visible: !t.visible } : t
+					)
+				};
+			}
+			return tab;
+		});
+	}
+
 	$effect(() => {
 		// Ensure there's always at least one tab
 		if (tabs.length === 0) {
@@ -90,17 +105,24 @@
 	</div>
 	<div class="waveform-content" class:delete-mode={deleteMode}>
 		{#if activeTab && activeTab.traces.length > 0}
-			<WaveformViewer traces={activeTab.traces} {timeData} />
+			<WaveformViewer
+				traces={activeTab.traces}
+				{timeData}
+				ontracetoggle={handleTraceToggle}
+			/>
 			{#if deleteMode}
 				<div class="delete-overlay">
 					<div class="legend-delete">
 						{#each activeTab.traces as trace}
-							<button 
+							<button
 								class="trace-delete-btn"
 								style="color: rgb({trace.color.r * 255}, {trace.color.g * 255}, {trace.color.b * 255})"
 								onclick={() => handleLegendClick(trace)}
 							>
-								🗑 {trace.name}
+								<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
+									<path d="M1 3h10M4 3V2h4v1M4 3v7h4V3M2 3v7a1 1 0 001 1h6a1 1 0 001-1V3"/>
+								</svg>
+								{trace.name}
 							</button>
 						{/each}
 					</div>
@@ -231,6 +253,13 @@
 		font-family: monospace;
 		cursor: pointer;
 		text-align: left;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.trace-delete-btn svg {
+		flex-shrink: 0;
 	}
 
 	.trace-delete-btn:hover {
