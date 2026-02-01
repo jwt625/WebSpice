@@ -12,6 +12,7 @@
 		snapToGrid as snapToGridUtil,
 		getWireSegments,
 		getAllPinPositions,
+		isPointOnWireSegment,
 		findComponentAt as findComponentAtUtil,
 		findWireAt as findWireAtUtil,
 		findJunctionAt as findJunctionAtUtil,
@@ -708,34 +709,6 @@
 				return;
 			}
 		}
-	}
-
-	/** Check if point lies on wire segment (not at endpoints) */
-	function isPointOnWireSegment(point: Point, wire: Wire): boolean {
-		// Check if point is at an endpoint (no junction needed there)
-		if ((point.x === wire.x1 && point.y === wire.y1) ||
-			(point.x === wire.x2 && point.y === wire.y2)) {
-			return false;
-		}
-
-		// Check if point is on the line segment
-		// For Manhattan wires, this is simple: check if on horizontal or vertical segment
-		if (wire.x1 === wire.x2) {
-			// Vertical wire
-			if (point.x === wire.x1) {
-				const minY = Math.min(wire.y1, wire.y2);
-				const maxY = Math.max(wire.y1, wire.y2);
-				return point.y > minY && point.y < maxY;
-			}
-		} else if (wire.y1 === wire.y2) {
-			// Horizontal wire
-			if (point.y === wire.y1) {
-				const minX = Math.min(wire.x1, wire.x2);
-				const maxX = Math.max(wire.x1, wire.x2);
-				return point.x > minX && point.x < maxX;
-			}
-		}
-		return false;
 	}
 
 	/** Handle click in delete mode */

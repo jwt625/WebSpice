@@ -123,7 +123,9 @@ interface DrawContext {
 - [x] Phase 1: Geometry utilities (1,538 -> 1,473 lines, -65 lines)
 - [x] Phase 2: Hit testing (1,473 -> 1,413 lines, -60 lines)
 - [x] Phase 3: Probe logic (1,413 -> 1,322 lines, -91 lines)
-- [ ] Phase 4: Mode handlers
+- [x] Phase 4: Mode handlers (1,322 -> 1,296 lines, -26 lines)
+  - Extracted `isPointOnWireSegment` to geometry.ts
+  - Note: Handlers themselves (handleWireClick, handleDeleteClick, etc.) are tightly coupled with Svelte state mutations and are better left in the main component
 - [ ] Phase 5: Drawing functions
 - [ ] Phase 6: Final cleanup
 
