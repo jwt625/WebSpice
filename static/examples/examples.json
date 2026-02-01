@@ -14,7 +14,7 @@
       "name": "Voltage Multiplier",
       "description": "6-stage Cockcroft-Walton multiplier",
       "category": "analog",
-      "schematicFile": "/examples/voltage-multiplier.json",
+      "schematicFile": "/examples/voltage-multiplier-ltspice.json",
       "netlistFile": "/test-circuits/voltage-multiplier.cir",
       "previewImage": null
     }

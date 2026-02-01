@@ -46,26 +46,30 @@ function getWireEndpoints(wire: Wire): Point[] {
 
 /** Get absolute pin positions for a component */
 export function getComponentPinPositions(comp: Component): { pin: string; pos: Point }[] {
-	const def = COMPONENT_DEFS[comp.type];
-	if (!def) return [];
-	
-	return def.pins.map(pin => {
+	// Use component's own pins if available (e.g., from LTSpice import), otherwise use COMPONENT_DEFS
+	const pinDefs = (comp.pins && comp.pins.length > 0)
+		? comp.pins.map(p => ({ name: p.name, x: p.x, y: p.y }))
+		: COMPONENT_DEFS[comp.type]?.pins || [];
+
+	if (pinDefs.length === 0) return [];
+
+	return pinDefs.map(pin => {
 		// Apply rotation and mirror to pin position
 		let px = pin.x;
 		let py = pin.y;
-		
+
 		// Mirror first (flip X)
 		if (comp.mirror) {
 			px = -px;
 		}
-		
+
 		// Then rotate
 		const rad = (comp.rotation * Math.PI) / 180;
 		const cos = Math.cos(rad);
 		const sin = Math.sin(rad);
 		const rx = px * cos - py * sin;
 		const ry = px * sin + py * cos;
-		
+
 		return {
 			pin: pin.name,
 			pos: { x: comp.x + rx, y: comp.y + ry }
