@@ -67,6 +67,11 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 	});
 
 	async function runSim() {
+		// Auto-generate netlist from schematic if there are components
+		if (schematic.components.length > 0) {
+			generateNetlistFromSchematic();
+		}
+
 		status = 'Running simulation...';
 		simResult = null;
 		// Clear all tabs' traces
