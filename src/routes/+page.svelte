@@ -4,17 +4,20 @@
 	import { initSimulation, runSimulation, terminateSimulation, type SimulationResult, type RealDataType } from '$lib/simulation';
 	import { TabbedWaveformViewer, type TraceData, type WaveformTab, getTraceColor } from '$lib/waveform';
 	import { NetlistEditor } from '$lib/editor';
-	import { SchematicCanvas, type Schematic, type Probe } from '$lib/schematic';
-	import { ResizablePanel, HelpModal, LandingPage } from '$lib/components';
+	import { SchematicCanvas, type Schematic, type Probe, type Component } from '$lib/schematic';
+	import { ResizablePanel, HelpModal, LandingPage, DirectiveModal, ComponentEditModal } from '$lib/components';
 	import { schematicToNetlist, generateNodeLabels, calculateComponentCurrent } from '$lib/netlist';
 
 	let status = $state('Not initialized');
 	let simResult = $state<SimulationResult | null>(null);
 	let timeData = $state<number[]>([]);
-	let schematic = $state<Schematic>({ components: [], wires: [], junctions: [] });
+	let schematic = $state<Schematic>({ components: [], wires: [], junctions: [], directives: [], parameters: {}, models: [] });
 	let probes = $state<Probe[]>([]);
 	let showHelp = $state(false);
 	let showLanding = $state(true);
+	let showDirectives = $state(false);
+	let showComponentEdit = $state(false);
+	let editingComponent = $state<Component | null>(null);
 
 	// Waveform tabs
 	let waveformTabs = $state<WaveformTab[]>([{ id: 'default', name: 'Plot 1', traces: [] }]);
@@ -409,9 +412,9 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 				components: data.schematic.components || [],
 				wires: data.schematic.wires || [],
 				junctions: data.schematic.junctions || [],
-				directives: data.schematic.directives,
-				parameters: data.schematic.parameters,
-				models: data.schematic.models
+				directives: data.schematic.directives || [],
+				parameters: data.schematic.parameters || {},
+				models: data.schematic.models || []
 			};
 
 			// Load netlist if present
@@ -443,7 +446,7 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 	/** Return to landing page */
 	function returnToLanding() {
 		// Clear current work
-		schematic = { components: [], wires: [], junctions: [] };
+		schematic = { components: [], wires: [], junctions: [], directives: [], parameters: {}, models: [] };
 		probes = [];
 		simResult = null;
 		timeData = [];
@@ -478,14 +481,38 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 			}
 			const netlistText = await netlistResponse.text();
 
-			// Update state
-			schematic = schematicData.schematic;
+			// Update state with defaults for directive fields
+			schematic = {
+				components: schematicData.schematic.components || [],
+				wires: schematicData.schematic.wires || [],
+				junctions: schematicData.schematic.junctions || [],
+				directives: schematicData.schematic.directives || [],
+				parameters: schematicData.schematic.parameters || {},
+				models: schematicData.schematic.models || []
+			};
 			netlistInput = netlistText;
 			showLanding = false;
 			status = `Loaded example: ${example.name}`;
 		} catch (err) {
 			status = `Failed to load example: ${err}`;
 		}
+	}
+
+	/** Handle double-click on component to open edit modal */
+	function handleEditComponent(component: Component) {
+		editingComponent = component;
+		showComponentEdit = true;
+	}
+
+	/** Handle saving component edits */
+	function handleSaveComponent(updatedComponent: Component) {
+		schematic = {
+			...schematic,
+			components: schematic.components.map(c =>
+				c.id === updatedComponent.id ? updatedComponent : c
+			)
+		};
+		status = `Updated component: ${updatedComponent.attributes.InstName || updatedComponent.type}`;
 	}
 </script>
 
@@ -534,8 +561,13 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 		</ResizablePanel>
 		<div class="right-panel">
 			<ResizablePanel title="Schematic" direction="vertical" initialSize={initialSizes.schematic} minSize={100} bind:collapsed={schematicCollapsed}>
+				{#snippet headerActions()}
+					<button class="panel-action-btn" onclick={() => showDirectives = true} title="Edit SPICE directives">
+						Directives
+					</button>
+				{/snippet}
 				<div class="panel-fill dark">
-					<SchematicCanvas bind:schematic onprobe={handleProbe} />
+					<SchematicCanvas bind:schematic onprobe={handleProbe} oneditcomponent={handleEditComponent} oneditdirectives={() => showDirectives = true} />
 				</div>
 			</ResizablePanel>
 			<div class="waveform-and-info">
@@ -571,6 +603,18 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 	</footer>
 
 	<HelpModal bind:visible={showHelp} />
+	<DirectiveModal
+		bind:visible={showDirectives}
+		bind:parameters={schematic.parameters}
+		bind:models={schematic.models}
+		bind:directives={schematic.directives}
+	/>
+	<ComponentEditModal
+		bind:visible={showComponentEdit}
+		bind:component={editingComponent}
+		models={schematic.models}
+		onsave={handleSaveComponent}
+	/>
 	{/if}
 </div>
 
@@ -652,6 +696,21 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 
 	.help-btn:hover:not(:disabled) {
 		background: var(--accent-green) !important;
+	}
+
+	.panel-action-btn {
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-primary);
+		color: var(--text-secondary);
+		cursor: pointer;
+		padding: 2px 8px;
+		font-size: 11px;
+		border-radius: 3px;
+	}
+
+	.panel-action-btn:hover {
+		background: var(--bg-tertiary);
+		color: var(--text-primary);
 	}
 
 	.workspace {

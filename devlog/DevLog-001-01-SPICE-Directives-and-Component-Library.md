@@ -1,7 +1,7 @@
 # DevLog 001-01: SPICE Directives and Component Library
 
 **Date:** 2026-02-01
-**Status:** Phases 1-3 and 6 Complete
+**Status:** Phases 1-6 Complete (with known issues)
 **Related Issues:** N/A
 **Depends On:** DevLog-001-00 (LTSpice schematic import)
 
@@ -110,15 +110,40 @@ Updated `src/routes/+page.svelte`:
 - Refactored `findNodeForWire()` to use `analyzeConnectivity()` directly instead of reimplementing BFS
 - The connectivity analysis uses Union-Find to properly group all connected points including junctions in the middle of wire segments
 
-### Remaining Phases
+#### Phase 4: Directive Editor Modal - DONE (with issues)
 
-#### Phase 4: Directive Editor Modal - NOT STARTED
-- Create `DirectiveModal.svelte` for editing params/models/simulation commands
-- Add "Directives" button to toolbar
+Created `src/lib/components/DirectiveModal.svelte`:
+- Tabbed interface: Parameters, Models, Simulation
+- Add/remove parameters with name/value pairs
+- Add models from built-in library dropdown
+- Edit simulation commands (.tran, .ac, .dc, .op)
+- Directives button moved to Schematic panel header via ResizablePanel headerActions snippet
 
-#### Phase 5: Component Property Editor - NOT STARTED
-- Create `ComponentEditModal.svelte` for double-click property editing
-- Add dblclick handler to SchematicCanvas
+Added `headerActions` snippet prop to `src/lib/components/ResizablePanel.svelte`.
+
+Known issues:
+- New directives positioning logic is fragile. New directives should use the same x coordinate as existing directives and be placed below the last one. Current implementation attempts this but may have edge cases.
+- Directive dragging/repositioning on canvas is not implemented.
+
+#### Phase 5: Component Property Editor - DONE
+
+Created `src/lib/components/ComponentEditModal.svelte`:
+- Opens on double-click of any component on the schematic canvas
+- Edit Instance Name and Value fields
+- For semiconductors, model dropdown populated from schematic models and component library
+
+Updated `src/lib/schematic/SchematicCanvas.svelte`:
+- Added `oneditcomponent` callback prop
+- Added `oneditdirectives` callback prop
+- Added `findDirectiveAt()` function for hit-testing directive text boxes
+- Updated `handleDoubleClick()` to check directives first, then components
+
+Updated `src/lib/components/index.ts` to export DirectiveModal and ComponentEditModal.
+
+Updated `src/routes/+page.svelte`:
+- Wired up DirectiveModal with bind to schematic.parameters, schematic.models, schematic.directives
+- Wired up ComponentEditModal for double-click component editing
+- Added oneditdirectives callback to SchematicCanvas
 
 ## Current State Analysis
 
@@ -310,5 +335,11 @@ Browse library, select model, add to schematic.
 3. [DONE] Implement Phase 3: Netlist generator enhancement
 4. [DONE] Implement Phase 6: Component library
 5. [DONE] Test with voltage multiplier example - now loading and simulating correctly
-6. Implement Phase 4: Directive editor modal (optional, for manual editing)
-7. Implement Phase 5: Component property editor (double-click to edit)
+6. [DONE] Implement Phase 4: Directive editor modal
+7. [DONE] Implement Phase 5: Component property editor (double-click to edit)
+
+## Known Issues
+
+- Directive positioning when adding new directives via the modal needs refinement. The logic to place new directives below existing ones and use the same x coordinate has edge cases.
+- Directives cannot be dragged/repositioned on the canvas. They are drawn but not interactive for movement.
+- Double-clicking a directive opens the full DirectiveModal, not a focused editor for just that directive.

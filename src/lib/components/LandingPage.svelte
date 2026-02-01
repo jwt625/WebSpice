@@ -98,12 +98,18 @@
 			{:else}
 				<div class="examples-grid">
 					{#each examples as example (example.id)}
-						<button class="example-card" onclick={() => handleExampleClick(example)}>
-							<div class="example-icon">
-								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={getCategoryIcon(example.category)} />
-								</svg>
-							</div>
+						<button class="example-card" class:has-preview={example.previewImage} onclick={() => handleExampleClick(example)}>
+							{#if example.previewImage}
+								<div class="example-preview">
+									<img src="{base}{example.previewImage}" alt="{example.name} preview" />
+								</div>
+							{:else}
+								<div class="example-icon">
+									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={getCategoryIcon(example.category)} />
+									</svg>
+								</div>
+							{/if}
 							<div class="example-info">
 								<span class="example-name">{example.name}</span>
 								<span class="example-desc">{example.description}</span>
@@ -251,6 +257,25 @@
 	.example-card:hover {
 		background: var(--bg-tertiary);
 		border-color: var(--btn-primary-bg);
+	}
+
+	.example-card.has-preview {
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.example-preview {
+		width: 100%;
+		aspect-ratio: 16 / 10;
+		overflow: hidden;
+		background: var(--bg-primary);
+		border: 1px solid var(--border-primary);
+	}
+
+	.example-preview img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
 	}
 
 	.example-icon {

@@ -17,10 +17,14 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 
 	let {
 		schematic = $bindable({ components: [], wires: [], junctions: [] }),
-		onprobe
+		onprobe,
+		oneditcomponent,
+		oneditdirectives
 	}: {
 		schematic: Schematic;
 		onprobe?: (event: ProbeEvent) => void;
+		oneditcomponent?: (component: Component) => void;
+		oneditdirectives?: () => void;
 	} = $props();
 
 	let canvas: HTMLCanvasElement;
@@ -428,6 +432,31 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 			ctx.fillStyle = '#cc88ff';
 			ctx.fillText(text, directive.x, directive.y);
 		}
+	}
+
+	/** Find directive at a given position */
+	function findDirectiveAt(pos: Point): boolean {
+		if (!ctx || !schematic.directives || schematic.directives.length === 0) return false;
+
+		const fontSize = Math.max(10, 14 / view.scale);
+		ctx.font = `${fontSize}px monospace`;
+
+		for (const directive of schematic.directives) {
+			if (directive.x === undefined || directive.y === undefined) continue;
+
+			const text = directive.text;
+			const metrics = ctx.measureText(text);
+			const padding = 3 / view.scale;
+			const bgWidth = metrics.width + padding * 2;
+			const bgHeight = fontSize + padding * 2;
+
+			// Check if click is within directive bounds
+			if (pos.x >= directive.x - padding && pos.x <= directive.x - padding + bgWidth &&
+				pos.y >= directive.y - padding && pos.y <= directive.y - padding + bgHeight) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Draw a voltage probe shape (pointed tip like multimeter probe) */
@@ -1113,6 +1142,23 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		dragStart = null;
 	}
 
+	function handleDoubleClick(e: MouseEvent) {
+		const clickPos = screenToSchematic(e.offsetX, e.offsetY);
+
+		// Check if clicking on a directive first
+		if (findDirectiveAt(clickPos) && oneditdirectives) {
+			oneditdirectives();
+			return;
+		}
+
+		// Find component at click position
+		const comp = findComponentAt(clickPos);
+		if (comp && oneditcomponent) {
+			// Emit event to open component edit modal
+			oneditcomponent(comp);
+		}
+	}
+
 	function handleWheel(e: WheelEvent) {
 		e.preventDefault();
 		const dpr = getDpr();
@@ -1305,6 +1351,7 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		onmousemove={handleMouseMove}
 		onmouseup={handleMouseUp}
 		onmouseleave={handleMouseUp}
+		ondblclick={handleDoubleClick}
 		onwheel={handleWheel}
 		onkeydown={handleKeyDown}
 		tabindex="0"

@@ -7,7 +7,7 @@
       "category": "basic",
       "schematicFile": "/examples/rc-lowpass.json",
       "netlistFile": "/test-circuits/minimal-rc.cir",
-      "previewImage": null
+      "previewImage": "/previewImage/rc-lowpass.png"
     },
     {
       "id": "voltage-multiplier",
@@ -16,7 +16,7 @@
       "category": "analog",
       "schematicFile": "/examples/voltage-multiplier-ltspice.json",
       "netlistFile": "/test-circuits/voltage-multiplier.cir",
-      "previewImage": null
+      "previewImage": "/previewImage/voltage-multiplier.png"
     }
   ]
 }
