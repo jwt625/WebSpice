@@ -30,6 +30,7 @@
 		"@lezer/highlight": "^1.2.3",
 		"comlink": "^4.4.2",
 		"eecircuit-engine": "^1.5.8",
+		"elkjs": "^0.11.0",
 		"webgl-plot": "^0.7.2"
 	}
 }

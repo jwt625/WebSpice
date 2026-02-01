@@ -29,6 +29,9 @@ importers:
       eecircuit-engine:
         specifier: ^1.5.8
         version: 1.5.8
+      elkjs:
+        specifier: ^0.11.0
+        version: 0.11.0
       webgl-plot:
         specifier: ^0.7.2
         version: 0.7.2
@@ -482,6 +485,9 @@ packages:
 
   eecircuit-engine@1.5.8:
     resolution: {integrity: sha512-nldh20KEB296WdwNDFvkGlMCD16ESnUaSPm+IxtDzWG0NJle+Zbw1X42tfTsTA39mO0pBW5774fuGP6pmgivsQ==}
+
+  elkjs@0.11.0:
+    resolution: {integrity: sha512-u4J8h9mwEDaYMqo0RYJpqNMFDoMK7f+pu4GjcV+N8jIC7TRdORgzkfSjTJemhqONFfH6fBI3wpysgWbhgVWIXw==}
 
   esbuild@0.27.2:
     resolution: {integrity: sha512-HyNQImnsOC7X9PMNaCIeAm4ISCQXs5a5YasTXVliKv4uuBo1dKrG0A+uQS8M5eXjVMnLg3WgXaKvprHlFJQffw==}
@@ -962,6 +968,8 @@ snapshots:
   devalue@5.6.2: {}
 
   eecircuit-engine@1.5.8: {}
+
+  elkjs@0.11.0: {}
 
   esbuild@0.27.2:
     optionalDependencies:
