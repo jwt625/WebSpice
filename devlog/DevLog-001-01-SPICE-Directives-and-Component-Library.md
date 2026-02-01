@@ -1,8 +1,8 @@
 # DevLog 001-01: SPICE Directives and Component Library
 
-**Date:** 2026-02-01  
-**Status:** Planning  
-**Related Issues:** N/A  
+**Date:** 2026-02-01
+**Status:** Phases 1-3 and 6 Complete
+**Related Issues:** N/A
 **Depends On:** DevLog-001-00 (LTSpice schematic import)
 
 ## Overview
@@ -11,6 +11,114 @@ Implement missing features to make imported LTSpice schematics simulate properly
 - Parameter `{CC}` is not defined (needs `.param CC=1u`)
 - Diode model `D1N4148` is not defined (needs `.model` directive)
 - Simulation command `.tran` is hardcoded instead of loaded from schematic
+
+## Implementation Progress
+
+### Completed (2026-02-01)
+
+#### Phase 1: Schematic Data Model Extension - DONE
+
+Extended `src/lib/schematic/types.ts`:
+- Added `DirectiveType` type: `'tran' | 'ac' | 'dc' | 'op' | 'param' | 'model' | 'other'`
+- Added `SpiceDirective` interface with id, type, text, and optional x/y position
+- Added `SpiceModel` interface with name, type, params, and optional description
+- Extended `Schematic` interface with `directives`, `parameters`, and `models` fields
+
+Updated `src/routes/+page.svelte` save/load functions to include new schematic fields.
+
+#### Phase 2: LTSpice Parser Enhancement - DONE
+
+Enhanced `scripts/parse-ltspice-asc.ts`:
+- Added parsing of TEXT commands with `!` prefix (SPICE directives in LTSpice)
+- Added `parseDirectiveType()` to classify directives
+- Added `parseParamDirective()` to extract `.param name=value`
+- Added `parseModelDirective()` to extract `.model name type(params)`
+- Updated `parseAscFile()` to return directives, parameters, and models
+- Updated `convertToSchematic()` to include these in the output
+
+#### Phase 3: Netlist Generator Enhancement - DONE
+
+Enhanced `src/lib/netlist/netlist-generator.ts`:
+- Added `expandParameters()` function to replace `{paramName}` with actual values
+- Added `fixTranDirective()` to handle LTSpice `.tran` with TSTEP=0 (ngspice requires TSTEP > 0)
+- Added `parseSpiceValue()` and `formatSpiceValue()` helper functions
+- Updated `generateNetlist()` to:
+  - Read parameters from schematic
+  - Output `.param` directives at the top
+  - Collect model references from components (diodes)
+  - Look up models from component library
+  - Output `.model` directives
+  - Use simulation directive from schematic (with TSTEP fix)
+- Updated `componentToSpice()` to expand parameters in component values
+- Special handling for diodes: model name goes in `extra` field
+
+#### Phase 6: Component Library - DONE
+
+Created `src/lib/models/component-library.ts`:
+- Built-in diode models: 1N4148, 1N4001, 1N4007, 1N5817, LED_RED
+- Built-in BJT models: 2N2222, 2N3904, 2N3906
+- `findModel(name)`: Case-insensitive lookup with alias support
+- `getModelDirective(model)`: Returns the `.model` SPICE directive string
+- Integrated with netlist generator to auto-include models when components reference them
+
+#### Directive Canvas Display - DONE
+
+Enhanced `src/lib/schematic/SchematicCanvas.svelte`:
+- Added `drawDirectives()` function to render SPICE directives on the canvas
+- Directives display with dark purple background and light purple text
+- Uses x/y positions from directive objects
+
+### Voltage Multiplier Example - WORKING
+
+The voltage multiplier example now loads and simulates correctly:
+- Parser extracts `.tran 0 2 0 1m` and `.param CC=1u` from the LTSpice .asc file
+- Netlist generator expands `{CC}` to `1u` in capacitor values
+- Netlist generator auto-includes `1N4148` model from component library
+- Netlist generator fixes `.tran 0 2 0 1m` to `.tran 2m 2 0 1m` for ngspice compatibility
+- Directives are visible on the schematic canvas
+
+### Key Technical Fixes
+
+**LTSpice .tran Compatibility:**
+LTSpice allows `.tran 0 Tstop ...` where TSTEP=0 means auto-calculate. NGSpice/eecircuit-engine requires TSTEP > 0. The fix calculates TSTEP as Tstop/1000 when the original is 0.
+
+**Model Library vs Schematic Storage:**
+Decided to use a component library approach. Schematics reference model names (e.g., "1N4148"), and the netlist generator looks up definitions from the library. This keeps schematics portable and lightweight.
+
+#### Current Probing for Capacitors and Diodes - DONE
+
+Enhanced `src/lib/netlist/current-calculator.ts`:
+- Added `expandParameters()` function to replace `{paramName}` with actual values from schematic parameters
+- Added `parseDiodeParams()` to extract Is, N, Rs from SPICE model strings
+- Added `calculateDiodeCurrent()` implementing the Shockley diode equation: `I = Is * (exp(V/(N*Vt)) - 1)`
+- Diode model parameters are looked up from the component library based on the diode's model name
+- Overflow protection implemented for large forward voltages (exponent clamped at 40)
+
+Updated `src/routes/+page.svelte`:
+- Removed restrictive component type check that only allowed resistors/capacitors for current calculation
+- Now attempts current calculation for all component types including diodes
+
+#### Wire Probing Bug Fix - DONE
+
+**Bug:** Clicking on wire segments would not always return the correct node voltage trace. Wires connected to node 1 through multiple junctions would fail to probe correctly.
+
+**Root Cause:** The `getNodeAtPosition()` function used `pointOnWire()` from connectivity.ts which has a tolerance of 1 unit. However, visual wire selection used `findWireAt()` with a tolerance of 5 units. This mismatch meant clicking near a wire would visually select it (yellow highlight) but `pointOnWire()` would return false, so `findNodeForWire()` was never called.
+
+**Fix in `src/lib/schematic/SchematicCanvas.svelte`:**
+- Changed `getNodeAtPosition()` to use `findWireAt(pos)` instead of `schematic.wires.find(w => pointOnWire(pos, w))`
+- This ensures the same tolerance is used for both visual selection and node lookup
+- Refactored `findNodeForWire()` to use `analyzeConnectivity()` directly instead of reimplementing BFS
+- The connectivity analysis uses Union-Find to properly group all connected points including junctions in the middle of wire segments
+
+### Remaining Phases
+
+#### Phase 4: Directive Editor Modal - NOT STARTED
+- Create `DirectiveModal.svelte` for editing params/models/simulation commands
+- Add "Directives" button to toolbar
+
+#### Phase 5: Component Property Editor - NOT STARTED
+- Create `ComponentEditModal.svelte` for double-click property editing
+- Add dblclick handler to SchematicCanvas
 
 ## Current State Analysis
 
@@ -197,8 +305,10 @@ Browse library, select model, add to schematic.
 
 ## Next Steps
 
-1. Implement Phase 1: Extend schematic types
-2. Implement Phase 3: Netlist generator enhancement
-3. Test with voltage multiplier example
-4. Proceed to UI phases
-
+1. [DONE] Implement Phase 1: Extend schematic types
+2. [DONE] Implement Phase 2: LTSpice parser enhancement
+3. [DONE] Implement Phase 3: Netlist generator enhancement
+4. [DONE] Implement Phase 6: Component library
+5. [DONE] Test with voltage multiplier example - now loading and simulating correctly
+6. Implement Phase 4: Directive editor modal (optional, for manual editing)
+7. Implement Phase 5: Component property editor (double-click to edit)

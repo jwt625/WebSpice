@@ -5,7 +5,7 @@
 	import { renderComponent, hitTestComponent, nextRotation } from './component-renderer';
 	import { COMPONENT_DEFS, getComponentByShortcut } from './component-defs';
 	import { COMPONENT_PREFIX } from '$lib/netlist/types';
-import { pointOnWire, pointsEqual } from '$lib/netlist/connectivity';
+import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/connectivity';
 
 	interface ProbeEvent {
 		type: ProbeType;
@@ -918,10 +918,9 @@ import { pointOnWire, pointsEqual } from '$lib/netlist/connectivity';
 			return null;
 		}
 
-		// First, check if position is on any wire
-		const clickedWire = schematic.wires.find(w => pointOnWire(pos, w));
+		// Use findWireAt (same as visual selection) instead of pointOnWire
+		const clickedWire = findWireAt(pos);
 		if (clickedWire) {
-			// Find all connected wires through BFS and check against node labels
 			const nodeName = findNodeForWire(clickedWire);
 			if (nodeName) return nodeName;
 		}
@@ -937,92 +936,34 @@ import { pointOnWire, pointsEqual } from '$lib/netlist/connectivity';
 		return closest?.name || null;
 	}
 
-	/** Find the node name for a wire by tracing connectivity */
+	/** Find the node name for a wire by using connectivity analysis */
 	function findNodeForWire(startWire: Wire): string | null {
-		// Build lookup structures once for efficiency
-		const pointKey = (p: Point) => `${Math.round(p.x)},${Math.round(p.y)}`;
+		const connectivity = analyzeConnectivity(schematic);
 
-		// Map from point key to wires that have that point as endpoint
-		const endpointToWires = new Map<string, Wire[]>();
-		for (const wire of schematic.wires) {
-			const k1 = pointKey({ x: wire.x1, y: wire.y1 });
-			const k2 = pointKey({ x: wire.x2, y: wire.y2 });
-			if (!endpointToWires.has(k1)) endpointToWires.set(k1, []);
-			if (!endpointToWires.has(k2)) endpointToWires.set(k2, []);
-			endpointToWires.get(k1)!.push(wire);
-			endpointToWires.get(k2)!.push(wire);
-		}
+		const wireEndpoints = [
+			{ x: startWire.x1, y: startWire.y1 },
+			{ x: startWire.x2, y: startWire.y2 }
+		];
 
-		// Map from point key to node label name
-		const pointToNode = new Map<string, string>();
-		for (const label of schematic.nodeLabels!) {
-			pointToNode.set(pointKey({ x: label.x, y: label.y }), label.name);
-		}
-
-		// BFS to find connected points
-		const visited = new Set<string>();
-		const wireQueue: Wire[] = [startWire];
-		const visitedWires = new Set<string>();
-
-		while (wireQueue.length > 0) {
-			const wire = wireQueue.shift()!;
-			if (visitedWires.has(wire.id)) continue;
-			visitedWires.add(wire.id);
-
-			const endpoints = [
-				{ x: wire.x1, y: wire.y1 },
-				{ x: wire.x2, y: wire.y2 }
-			];
-
-			for (const ep of endpoints) {
-				const key = pointKey(ep);
-				if (visited.has(key)) continue;
-				visited.add(key);
-
-				// Check if this point has a node label
-				const nodeName = pointToNode.get(key);
-				if (nodeName) return nodeName;
-
-				// Add connected wires at this endpoint
-				const connectedWires = endpointToWires.get(key) || [];
-				for (const w of connectedWires) {
-					if (!visitedWires.has(w.id)) wireQueue.push(w);
-				}
-
-				// Check junctions at this point
-				for (const junc of schematic.junctions) {
-					if (pointsEqual(ep, { x: junc.x, y: junc.y })) {
-						// Find wires that pass through this junction
-						for (const w of schematic.wires) {
-							if (!visitedWires.has(w.id) && pointOnWire({ x: junc.x, y: junc.y }, w)) {
-								wireQueue.push(w);
-							}
-						}
+		// Find which net contains this wire's endpoints
+		for (const net of connectivity.nets) {
+			for (const ep of wireEndpoints) {
+				for (const netPoint of net.points) {
+					if (pointsEqual(ep, netPoint)) {
+						return net.name;
 					}
 				}
 			}
+		}
 
-			// Check junctions on this wire segment
-			for (const junc of schematic.junctions) {
-				const jp = { x: junc.x, y: junc.y };
-				if (pointOnWire(jp, wire)) {
-					const key = pointKey(jp);
-					if (!visited.has(key)) {
-						visited.add(key);
-
-						const nodeName = pointToNode.get(key);
-						if (nodeName) return nodeName;
-
-						// Add wires connected at this junction
-						const connectedWires = endpointToWires.get(key) || [];
-						for (const w of connectedWires) {
-							if (!visitedWires.has(w.id)) wireQueue.push(w);
-						}
-						// Also find wires that pass through this junction
-						for (const w of schematic.wires) {
-							if (!visitedWires.has(w.id) && pointOnWire(jp, w)) {
-								wireQueue.push(w);
-							}
+		// Also check if any junction on this wire is part of a net
+		for (const junc of schematic.junctions) {
+			const jp = { x: junc.x, y: junc.y };
+			if (pointOnWire(jp, startWire)) {
+				for (const net of connectivity.nets) {
+					for (const netPoint of net.points) {
+						if (pointsEqual(jp, netPoint)) {
+							return net.name;
 						}
 					}
 				}

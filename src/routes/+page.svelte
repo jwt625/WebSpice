@@ -213,7 +213,7 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 			// If current probe not found in sim data, try to calculate it
 			if (!foundInSimData && probe.type === 'current' && probe.componentId && timeData.length > 0) {
 				const comp = schematic.components.find(c => c.id === probe.componentId);
-				if (comp && (comp.type === 'resistor' || comp.type === 'capacitor')) {
+				if (comp) {
 					const calculatedCurrent = calculateComponentCurrent(
 						comp,
 						schematic,
