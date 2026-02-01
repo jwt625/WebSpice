@@ -5,7 +5,7 @@
 	import { renderComponent, nextRotation } from './component-renderer';
 	import { COMPONENT_DEFS, getComponentByShortcut } from './component-defs';
 	import { COMPONENT_PREFIX } from '$lib/netlist/types';
-	import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/connectivity';
+
 	import {
 		screenToSchematic as screenToSchematicUtil,
 		schematicToScreen as schematicToScreenUtil,
@@ -15,7 +15,10 @@
 		findComponentAt as findComponentAtUtil,
 		findWireAt as findWireAtUtil,
 		findJunctionAt as findJunctionAtUtil,
-		findDirectiveAtPos as findDirectiveAtPosUtil
+		findDirectiveAtPos as findDirectiveAtPosUtil,
+		drawVoltageProbe as drawVoltageProbeUtil,
+		drawCurrentClamp as drawCurrentClampUtil,
+		findNodeForWire as findNodeForWireUtil
 	} from './canvas';
 
 	interface ProbeEvent {
@@ -393,77 +396,16 @@
 		}
 	}
 
-	/** Draw a voltage probe shape (pointed tip like multimeter probe) */
-	function drawVoltageProbe(x: number, y: number, color: string, label: string) {
+	// Wrapper functions for probe drawing
+	const drawVoltageProbe = (x: number, y: number, color: string, label: string): void => {
 		if (!ctx) return;
-		const s = 1 / view.scale;  // Scale factor
+		drawVoltageProbeUtil(ctx, x, y, color, label, view.scale);
+	};
 
-		// Probe tip pointing down-left (toward the circuit point)
-		ctx.save();
-		ctx.translate(x, y);
-
-		// Pointed tip
-		ctx.fillStyle = color;
-		ctx.beginPath();
-		ctx.moveTo(0, 0);  // Tip
-		ctx.lineTo(4 * s, -8 * s);
-		ctx.lineTo(8 * s, -8 * s);
-		ctx.lineTo(8 * s, -28 * s);
-		ctx.lineTo(4 * s, -28 * s);
-		ctx.lineTo(4 * s, -8 * s);
-		ctx.closePath();
-		ctx.fill();
-
-		// Handle
-		ctx.fillStyle = '#333333';
-		ctx.fillRect(3 * s, -40 * s, 6 * s, 14 * s);
-
-		// Label (+/-)
-		ctx.fillStyle = '#ffffff';
-		ctx.font = `bold ${10 * s}px sans-serif`;
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.fillText(label, 6 * s, -18 * s);
-
-		ctx.restore();
-	}
-
-	/** Draw a current clamp/transformer shape */
-	function drawCurrentClamp(x: number, y: number) {
+	const drawCurrentClamp = (x: number, y: number): void => {
 		if (!ctx) return;
-		const s = 1 / view.scale;
-
-		ctx.save();
-		ctx.translate(x, y);
-
-		// Clamp jaws (open loop shape)
-		ctx.strokeStyle = '#ff8800';
-		ctx.lineWidth = 3 * s;
-		ctx.beginPath();
-		// Left jaw
-		ctx.arc(0, -15 * s, 12 * s, 0.3 * Math.PI, 0.9 * Math.PI);
-		ctx.stroke();
-		ctx.beginPath();
-		// Right jaw
-		ctx.arc(0, -15 * s, 12 * s, 0.1 * Math.PI, -0.1 * Math.PI, true);
-		ctx.lineTo(6 * s, -15 * s);
-		ctx.stroke();
-
-		// Handle
-		ctx.fillStyle = '#ff8800';
-		ctx.fillRect(-4 * s, -30 * s, 8 * s, 8 * s);
-		ctx.fillStyle = '#333333';
-		ctx.fillRect(-3 * s, -45 * s, 6 * s, 16 * s);
-
-		// "I" label
-		ctx.fillStyle = '#ffffff';
-		ctx.font = `bold ${8 * s}px sans-serif`;
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.fillText('I', 0, -26 * s);
-
-		ctx.restore();
-	}
+		drawCurrentClampUtil(ctx, x, y, view.scale);
+	};
 
 	function drawProbeCursor() {
 		if (!ctx) return;
@@ -972,42 +914,9 @@
 		return closest?.name || null;
 	}
 
-	/** Find the node name for a wire by using connectivity analysis */
-	function findNodeForWire(startWire: Wire): string | null {
-		const connectivity = analyzeConnectivity(schematic);
-
-		const wireEndpoints = [
-			{ x: startWire.x1, y: startWire.y1 },
-			{ x: startWire.x2, y: startWire.y2 }
-		];
-
-		// Find which net contains this wire's endpoints
-		for (const net of connectivity.nets) {
-			for (const ep of wireEndpoints) {
-				for (const netPoint of net.points) {
-					if (pointsEqual(ep, netPoint)) {
-						return net.name;
-					}
-				}
-			}
-		}
-
-		// Also check if any junction on this wire is part of a net
-		for (const junc of schematic.junctions) {
-			const jp = { x: junc.x, y: junc.y };
-			if (pointOnWire(jp, startWire)) {
-				for (const net of connectivity.nets) {
-					for (const netPoint of net.points) {
-						if (pointsEqual(jp, netPoint)) {
-							return net.name;
-						}
-					}
-				}
-			}
-		}
-
-		return null;
-	}
+	// Wrapper for findNodeForWire
+	const findNodeForWire = (startWire: Wire): string | null =>
+		findNodeForWireUtil(startWire, schematic);
 
 	/** Add a probe (calls onprobe callback) */
 	function addProbe(type: ProbeType, node1: string, componentId?: string, node2?: string) {
