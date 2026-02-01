@@ -4,7 +4,7 @@
 	import { TabbedWaveformViewer, type TraceData, type WaveformTab, getTraceColor } from '$lib/waveform';
 	import { NetlistEditor } from '$lib/editor';
 	import { SchematicCanvas, type Schematic, type Probe } from '$lib/schematic';
-	import { ResizablePanel, HelpModal } from '$lib/components';
+	import { ResizablePanel, HelpModal, LandingPage } from '$lib/components';
 	import { schematicToNetlist, generateNodeLabels, calculateComponentCurrent } from '$lib/netlist';
 
 	let status = $state('Not initialized');
@@ -13,6 +13,7 @@
 	let schematic = $state<Schematic>({ components: [], wires: [], junctions: [] });
 	let probes = $state<Probe[]>([]);
 	let showHelp = $state(false);
+	let showLanding = $state(true);
 
 	// Waveform tabs
 	let waveformTabs = $state<WaveformTab[]>([{ id: 'default', name: 'Plot 1', traces: [] }]);
@@ -415,8 +416,56 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 			probes = [];
 
 			status = `Loaded: ${schematic.components.length} components, ${schematic.wires.length} wires`;
+			showLanding = false;
 		} catch (err) {
 			status = `Failed to load schematic: ${err}`;
+		}
+	}
+
+	/** Handle new project from landing page */
+	function handleNewProject() {
+		showLanding = false;
+		status = 'NGSpice ready';
+	}
+
+	/** Handle open file from landing page */
+	function handleOpenFile() {
+		openSchematicDialog();
+	}
+
+	/** Return to landing page */
+	function returnToLanding() {
+		// Clear current work
+		schematic = { components: [], wires: [], junctions: [] };
+		probes = [];
+		simResult = null;
+		timeData = [];
+		waveformTabs = [{ id: 'default', name: 'Plot 1', traces: [] }];
+		activeTabId = 'default';
+		netlistInput = `* Minimal RC Circuit Test
+R1 in out 1k
+C1 out 0 1u
+Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
+.tran 1u 5m
+.end`;
+		showLanding = true;
+		status = 'NGSpice ready';
+	}
+
+	/** Handle load example from landing page */
+	async function handleLoadExample(fileName: string) {
+		try {
+			status = `Loading ${fileName}...`;
+			const response = await fetch(`/test-circuits/${fileName}`);
+			if (!response.ok) {
+				throw new Error(`Failed to load example: ${response.statusText}`);
+			}
+			const text = await response.text();
+			netlistInput = text;
+			showLanding = false;
+			status = `Loaded example: ${fileName}`;
+		} catch (err) {
+			status = `Failed to load example: ${err}`;
 		}
 	}
 </script>
@@ -428,30 +477,37 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 <svelte:window onkeydown={handleKeyDown} />
 
 <div class="app">
-	<header class="toolbar">
-		<span class="app-title">WebSpice</span>
-		<button onclick={openSchematicDialog} title="Open schematic file">
-			Open (Ctrl+O)
-		</button>
-		<button onclick={saveSchematic} disabled={schematic.components.length === 0 && schematic.wires.length === 0} title="Save schematic to file">
-			Save (Ctrl+S)
-		</button>
-		<span class="toolbar-separator"></span>
-		<button onclick={generateNetlistFromSchematic} disabled={schematic.components.length === 0}>
-			Generate Netlist (Ctrl+N)
-		</button>
-		<button onclick={runSim} disabled={status.includes('Initializing') || status.includes('Running')}>
-			Run Simulation (Ctrl+B)
-		</button>
-		{#if getTotalTraceCount() > 0}
-			<span class="trace-count">{getTotalTraceCount()} traces</span>
-		{/if}
-		<div class="toolbar-spacer"></div>
-		<button class="help-btn" onclick={() => showHelp = true} title="Show keyboard shortcuts (H)">
-			?
-		</button>
-	</header>
-	<main class="workspace">
+	{#if showLanding}
+		<LandingPage
+			onnewproject={handleNewProject}
+			onopenfile={handleOpenFile}
+			onloadexample={handleLoadExample}
+		/>
+	{:else}
+		<header class="toolbar">
+			<span class="app-title" onclick={returnToLanding} title="Return to landing page" role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && returnToLanding()}>WebSpice</span>
+			<button onclick={openSchematicDialog} title="Open schematic file">
+				Open (Ctrl+O)
+			</button>
+			<button onclick={saveSchematic} disabled={schematic.components.length === 0 && schematic.wires.length === 0} title="Save schematic to file">
+				Save (Ctrl+S)
+			</button>
+			<span class="toolbar-separator"></span>
+			<button onclick={generateNetlistFromSchematic} disabled={schematic.components.length === 0}>
+				Generate Netlist (Ctrl+N)
+			</button>
+			<button onclick={runSim} disabled={status.includes('Initializing') || status.includes('Running')}>
+				Run Simulation (Ctrl+B)
+			</button>
+			{#if getTotalTraceCount() > 0}
+				<span class="trace-count">{getTotalTraceCount()} traces</span>
+			{/if}
+			<div class="toolbar-spacer"></div>
+			<button class="help-btn" onclick={() => showHelp = true} title="Show keyboard shortcuts (H)">
+				?
+			</button>
+		</header>
+		<main class="workspace">
 		<ResizablePanel title="Netlist" direction="horizontal" initialSize={300} minSize={200} bind:collapsed={netlistCollapsed}>
 			<div class="panel-fill">
 				<NetlistEditor bind:value={netlistInput} />
@@ -488,9 +544,15 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 	</main>
 	<footer class="statusbar">
 		<span>{status}</span>
+		<a href="https://github.com/jwt625/WebSpice" target="_blank" rel="noopener noreferrer" class="github-link" title="View on GitHub">
+			<svg viewBox="0 0 24 24" fill="currentColor" class="github-icon">
+				<path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+			</svg>
+		</a>
 	</footer>
 
 	<HelpModal bind:visible={showHelp} />
+	{/if}
 </div>
 
 <style>
@@ -533,6 +595,11 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 	.app-title {
 		font-weight: 600;
 		color: var(--text-primary);
+		cursor: pointer;
+	}
+
+	.app-title:hover {
+		opacity: 0.8;
 	}
 
 	.toolbar-separator {
@@ -634,5 +701,25 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 		height: 24px;
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
+		gap: var(--spacing-md);
+	}
+
+	.statusbar .github-link {
+		display: flex;
+		align-items: center;
+		color: var(--statusbar-text);
+		text-decoration: none;
+		opacity: 0.7;
+		transition: opacity 0.2s ease;
+	}
+
+	.statusbar .github-link:hover {
+		opacity: 1;
+	}
+
+	.statusbar .github-icon {
+		width: 16px;
+		height: 16px;
 	}
 </style>
