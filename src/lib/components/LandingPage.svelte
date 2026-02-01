@@ -1,34 +1,40 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+
 	interface Example {
 		id: string;
 		name: string;
 		description: string;
-		fileName: string;
 		category: 'basic' | 'analog' | 'digital';
+		schematicFile: string;
+		netlistFile: string;
+		previewImage: string | null;
 	}
 
-	const EXAMPLES: Example[] = [
-		{
-			id: 'minimal-rc',
-			name: 'RC Low-Pass Filter',
-			description: 'Simple RC circuit with pulse input',
-			fileName: 'minimal-rc.cir',
-			category: 'basic'
-		},
-		{
-			id: 'voltage-multiplier',
-			name: 'Voltage Multiplier',
-			description: '6-stage Cockcroft-Walton multiplier',
-			fileName: 'voltage-multiplier.cir',
-			category: 'analog'
-		}
-	];
+	let examples = $state<Example[]>([]);
+	let loading = $state(true);
+	let error = $state<string | null>(null);
 
 	let { onnewproject, onopenfile, onloadexample }: {
 		onnewproject: () => void;
 		onopenfile: () => void;
-		onloadexample: (fileName: string) => void;
+		onloadexample: (example: Example) => void;
 	} = $props();
+
+	onMount(async () => {
+		try {
+			const response = await fetch('/examples/examples.json');
+			if (!response.ok) {
+				throw new Error(`Failed to load examples: ${response.statusText}`);
+			}
+			const data = await response.json();
+			examples = data.examples;
+			loading = false;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load examples';
+			loading = false;
+		}
+	});
 
 	function handleNewProject() {
 		onnewproject();
@@ -39,7 +45,7 @@
 	}
 
 	function handleExampleClick(example: Example) {
-		onloadexample(example.fileName);
+		onloadexample(example);
 	}
 
 	function getCategoryIcon(category: string) {
@@ -81,21 +87,29 @@
 
 		<div class="examples-section">
 			<h3 class="examples-title">Or try an example:</h3>
-			<div class="examples-grid">
-				{#each EXAMPLES as example (example.id)}
-					<button class="example-card" onclick={() => handleExampleClick(example)}>
-						<div class="example-icon">
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={getCategoryIcon(example.category)} />
-							</svg>
-						</div>
-						<div class="example-info">
-							<span class="example-name">{example.name}</span>
-							<span class="example-desc">{example.description}</span>
-						</div>
-					</button>
-				{/each}
-			</div>
+			{#if loading}
+				<p class="examples-loading">Loading examples...</p>
+			{:else if error}
+				<p class="examples-error">Error: {error}</p>
+			{:else if examples.length === 0}
+				<p class="examples-empty">No examples available</p>
+			{:else}
+				<div class="examples-grid">
+					{#each examples as example (example.id)}
+						<button class="example-card" onclick={() => handleExampleClick(example)}>
+							<div class="example-icon">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={getCategoryIcon(example.category)} />
+								</svg>
+							</div>
+							<div class="example-info">
+								<span class="example-name">{example.name}</span>
+								<span class="example-desc">{example.description}</span>
+							</div>
+						</button>
+					{/each}
+				</div>
+			{/if}
 		</div>
 
 		<footer class="landing-footer">
@@ -199,6 +213,19 @@
 		color: var(--text-secondary);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
+	}
+
+	.examples-loading,
+	.examples-error,
+	.examples-empty {
+		padding: 2rem;
+		text-align: center;
+		font-size: 0.875rem;
+		color: var(--text-secondary);
+	}
+
+	.examples-error {
+		color: var(--accent-red, #ff6b6b);
 	}
 
 	.examples-grid {

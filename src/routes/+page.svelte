@@ -453,17 +453,29 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 	}
 
 	/** Handle load example from landing page */
-	async function handleLoadExample(fileName: string) {
+	async function handleLoadExample(example: { id: string; name: string; schematicFile: string; netlistFile: string }) {
 		try {
-			status = `Loading ${fileName}...`;
-			const response = await fetch(`/test-circuits/${fileName}`);
-			if (!response.ok) {
-				throw new Error(`Failed to load example: ${response.statusText}`);
+			status = `Loading ${example.name}...`;
+
+			// Load schematic JSON
+			const schematicResponse = await fetch(example.schematicFile);
+			if (!schematicResponse.ok) {
+				throw new Error(`Failed to load schematic: ${schematicResponse.statusText}`);
 			}
-			const text = await response.text();
-			netlistInput = text;
+			const schematicData = await schematicResponse.json();
+
+			// Load netlist
+			const netlistResponse = await fetch(example.netlistFile);
+			if (!netlistResponse.ok) {
+				throw new Error(`Failed to load netlist: ${netlistResponse.statusText}`);
+			}
+			const netlistText = await netlistResponse.text();
+
+			// Update state
+			schematic = schematicData.schematic;
+			netlistInput = netlistText;
 			showLanding = false;
-			status = `Loaded example: ${fileName}`;
+			status = `Loaded example: ${example.name}`;
 		} catch (err) {
 			status = `Failed to load example: ${err}`;
 		}

@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "schematic": {
+    "components": [
+      {
+        "id": "rc-r1",
+        "type": "resistor",
+        "x": -50,
+        "y": -60,
+        "rotation": 90,
+        "mirror": false,
+        "attributes": {
+          "InstName": "R1",
+          "Value": "1k"
+        },
+        "pins": [
+          {
+            "x": 0,
+            "y": -30,
+            "name": "1",
+            "id": "0"
+          },
+          {
+            "x": 0,
+            "y": 30,
+            "name": "2",
+            "id": "1"
+          }
+        ]
+      },
+      {
+        "id": "rc-c1",
+        "type": "capacitor",
+        "x": 50,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attributes": {
+          "InstName": "C1",
+          "Value": "1u"
+        },
+        "pins": [
+          {
+            "x": 0,
+            "y": -30,
+            "name": "1",
+            "id": "0"
+          },
+          {
+            "x": 0,
+            "y": 30,
+            "name": "2",
+            "id": "1"
+          }
+        ]
+      },
+      {
+        "id": "rc-vin",
+        "type": "voltage",
+        "x": -150,
+        "y": -10,
+        "rotation": 0,
+        "mirror": false,
+        "attributes": {
+          "InstName": "Vin",
+          "Value": "PULSE(0 5 0 1n 1n 0.5m 1m)"
+        },
+        "pins": [
+          {
+            "x": 0,
+            "y": -40,
+            "name": "+",
+            "id": "0"
+          },
+          {
+            "x": 0,
+            "y": 40,
+            "name": "-",
+            "id": "1"
+          }
+        ]
+      },
+      {
+        "id": "rc-gnd",
+        "type": "ground",
+        "x": -150,
+        "y": 70,
+        "rotation": 0,
+        "mirror": false,
+        "attributes": {
+          "InstName": "",
+          "Value": ""
+        },
+        "pins": [
+          {
+            "x": 0,
+            "y": -10,
+            "name": "0",
+            "id": "0"
+          }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "rc-w1",
+        "x1": -150,
+        "y1": -50,
+        "x2": -150,
+        "y2": -90
+      },
+      {
+        "id": "rc-w2",
+        "x1": -150,
+        "y1": -90,
+        "x2": -50,
+        "y2": -90
+      },
+      {
+        "id": "rc-w3",
+        "x1": -50,
+        "y1": -30,
+        "x2": -50,
+        "y2": -20
+      },
+      {
+        "id": "rc-w4",
+        "x1": -50,
+        "y1": -20,
+        "x2": 50,
+        "y2": -20
+      },
+      {
+        "id": "rc-w5",
+        "x1": 50,
+        "y1": -20,
+        "x2": 50,
+        "y2": -30
+      },
+      {
+        "id": "rc-w6",
+        "x1": 50,
+        "y1": 30,
+        "x2": 50,
+        "y2": 60
+      },
+      {
+        "id": "rc-w7",
+        "x1": 50,
+        "y1": 60,
+        "x2": -150,
+        "y2": 60
+      },
+      {
+        "id": "rc-w8",
+        "x1": -150,
+        "y1": 60,
+        "x2": -150,
+        "y2": 30
+      }
+    ],
+    "junctions": [
+      {
+        "id": "rc-j1",
+        "x": -150,
+        "y": 60
+      }
+    ]
+  },
+  "netlist": "* Minimal RC Circuit - Basic Test\n* Simple RC low-pass filter with pulse input\n\nR1 in out 1k\nC1 out 0 1u\n\nVin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)\n\n.tran 1u 5m\n\n.end",
+  "savedAt": "2026-02-01T00:00:00.000Z"
+}
+

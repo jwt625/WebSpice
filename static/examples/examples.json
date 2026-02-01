@@ -1,0 +1,23 @@
+{
+  "examples": [
+    {
+      "id": "minimal-rc",
+      "name": "RC Low-Pass Filter",
+      "description": "Simple RC circuit with pulse input",
+      "category": "basic",
+      "schematicFile": "/examples/rc-lowpass.json",
+      "netlistFile": "/test-circuits/minimal-rc.cir",
+      "previewImage": null
+    },
+    {
+      "id": "voltage-multiplier",
+      "name": "Voltage Multiplier",
+      "description": "6-stage Cockcroft-Walton multiplier",
+      "category": "analog",
+      "schematicFile": "/examples/voltage-multiplier.json",
+      "netlistFile": "/test-circuits/voltage-multiplier.cir",
+      "previewImage": null
+    }
+  ]
+}
+
