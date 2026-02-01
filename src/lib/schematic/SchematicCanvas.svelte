@@ -43,6 +43,11 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 	// Selection state
 	let selectedIds: Set<string> = $state(new Set());
 	let selectedWireIds: Set<string> = $state(new Set());
+	let selectedDirectiveIds: Set<string> = $state(new Set());
+
+	// Move operation state
+	let isMoving = $state(false);
+	let moveStartSchematicPos: Point | null = null;
 
 	// Component placement state
 	let placingType: ComponentType | null = $state(null);
@@ -413,30 +418,31 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 			// Only draw directives that have position
 			if (directive.x === undefined || directive.y === undefined) continue;
 
+			const isSelected = selectedDirectiveIds.has(directive.id);
 			const text = directive.text;
 			const metrics = ctx.measureText(text);
 			const padding = 3 / view.scale;
 			const bgWidth = metrics.width + padding * 2;
 			const bgHeight = fontSize + padding * 2;
 
-			// Draw background - dark purple for directives
-			ctx.fillStyle = '#2a1a3a';
+			// Draw background - dark purple for directives, yellow tint if selected
+			ctx.fillStyle = isSelected ? '#3a3a1a' : '#2a1a3a';
 			ctx.fillRect(directive.x - padding, directive.y - padding, bgWidth, bgHeight);
 
-			// Draw border
-			ctx.strokeStyle = '#6a4a8a';
-			ctx.lineWidth = 1 / view.scale;
+			// Draw border - yellow if selected
+			ctx.strokeStyle = isSelected ? '#ffff00' : '#6a4a8a';
+			ctx.lineWidth = (isSelected ? 2 : 1) / view.scale;
 			ctx.strokeRect(directive.x - padding, directive.y - padding, bgWidth, bgHeight);
 
 			// Draw text - light purple/magenta for SPICE directives
-			ctx.fillStyle = '#cc88ff';
+			ctx.fillStyle = isSelected ? '#ffff88' : '#cc88ff';
 			ctx.fillText(text, directive.x, directive.y);
 		}
 	}
 
-	/** Find directive at a given position */
-	function findDirectiveAt(pos: Point): boolean {
-		if (!ctx || !schematic.directives || schematic.directives.length === 0) return false;
+	/** Find directive at a given position - returns the directive or null */
+	function findDirectiveAtPos(pos: Point): import('./types').SpiceDirective | null {
+		if (!ctx || !schematic.directives || schematic.directives.length === 0) return null;
 
 		const fontSize = Math.max(10, 14 / view.scale);
 		ctx.font = `${fontSize}px monospace`;
@@ -453,10 +459,10 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 			// Check if click is within directive bounds
 			if (pos.x >= directive.x - padding && pos.x <= directive.x - padding + bgWidth &&
 				pos.y >= directive.y - padding && pos.y <= directive.y - padding + bgHeight) {
-				return true;
+				return directive;
 			}
 		}
-		return false;
+		return null;
 	}
 
 	/** Draw a voltage probe shape (pointed tip like multimeter probe) */
@@ -601,8 +607,8 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 			} else {
 				text += ' | Click wire=V probe, Click component=I probe, Hold+drag=V diff';
 			}
-		} else if (selectedIds.size > 0 || selectedWireIds.size > 0) {
-			const total = selectedIds.size + selectedWireIds.size;
+		} else if (selectedIds.size > 0 || selectedWireIds.size > 0 || selectedDirectiveIds.size > 0) {
+			const total = selectedIds.size + selectedWireIds.size + selectedDirectiveIds.size;
 			text += ` | Selected: ${total}`;
 			text += ' | Ctrl+R=rotate, Ctrl+E=mirror, Del=delete';
 		}
@@ -649,9 +655,90 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 				return;
 			}
 
-			// Select mode - check for component/wire selection
+			// Check what's under the click
 			const clickedComp = findComponentAt(clickPos);
 			const clickedWire = findWireAt(clickPos);
+			const clickedDirective = findDirectiveAtPos(clickPos);
+
+			// Handle move mode - select and start moving
+			if (mode === 'move') {
+				if (clickedDirective) {
+					// Select directive and start moving
+					if (!selectedDirectiveIds.has(clickedDirective.id)) {
+						if (!e.shiftKey) {
+							selectedIds = new Set();
+							selectedWireIds = new Set();
+							selectedDirectiveIds = new Set([clickedDirective.id]);
+						} else {
+							selectedDirectiveIds.add(clickedDirective.id);
+							selectedDirectiveIds = new Set(selectedDirectiveIds);
+						}
+					}
+					isMoving = true;
+					moveStartSchematicPos = snapped;
+					dragStart = { x: e.offsetX, y: e.offsetY };
+					render();
+					return;
+				}
+				if (clickedComp) {
+					// Select component and start moving
+					if (!selectedIds.has(clickedComp.id)) {
+						if (!e.shiftKey) {
+							selectedIds = new Set([clickedComp.id]);
+							selectedWireIds = new Set();
+							selectedDirectiveIds = new Set();
+						} else {
+							selectedIds.add(clickedComp.id);
+							selectedIds = new Set(selectedIds);
+						}
+					}
+					isMoving = true;
+					moveStartSchematicPos = snapped;
+					dragStart = { x: e.offsetX, y: e.offsetY };
+					render();
+					return;
+				}
+				if (clickedWire) {
+					// Select wire and start moving
+					if (!selectedWireIds.has(clickedWire.id)) {
+						if (!e.shiftKey) {
+							selectedWireIds = new Set([clickedWire.id]);
+							selectedIds = new Set();
+							selectedDirectiveIds = new Set();
+						} else {
+							selectedWireIds.add(clickedWire.id);
+							selectedWireIds = new Set(selectedWireIds);
+						}
+					}
+					isMoving = true;
+					moveStartSchematicPos = snapped;
+					dragStart = { x: e.offsetX, y: e.offsetY };
+					render();
+					return;
+				}
+				// Click on empty space in move mode - just prepare for pan
+				dragStart = { x: e.offsetX, y: e.offsetY };
+				render();
+				return;
+			}
+
+			// Select mode - check for component/wire/directive selection
+			if (clickedDirective) {
+				if (e.shiftKey) {
+					if (selectedDirectiveIds.has(clickedDirective.id)) {
+						selectedDirectiveIds.delete(clickedDirective.id);
+					} else {
+						selectedDirectiveIds.add(clickedDirective.id);
+					}
+					selectedDirectiveIds = new Set(selectedDirectiveIds);
+				} else {
+					selectedDirectiveIds = new Set([clickedDirective.id]);
+					selectedIds = new Set();
+					selectedWireIds = new Set();
+				}
+				render();
+				return;
+			}
 
 			if (clickedComp) {
 				if (e.shiftKey) {
@@ -665,6 +752,7 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 				} else {
 					selectedIds = new Set([clickedComp.id]);
 					selectedWireIds = new Set();
+					selectedDirectiveIds = new Set();
 				}
 				render();
 				return;
@@ -681,6 +769,7 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 				} else {
 					selectedWireIds = new Set([clickedWire.id]);
 					selectedIds = new Set();
+					selectedDirectiveIds = new Set();
 				}
 				render();
 				return;
@@ -690,6 +779,7 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 			if (!e.shiftKey) {
 				selectedIds = new Set();
 				selectedWireIds = new Set();
+				selectedDirectiveIds = new Set();
 			}
 			dragStart = { x: e.offsetX, y: e.offsetY };
 			render();
@@ -1119,7 +1209,51 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 			}
 		}
 
-		if (isDragging && dragStart) {
+		// Handle moving selected items
+		if (isMoving && moveStartSchematicPos && isDragging) {
+			const currentSnapped = snapToGrid(schematicPos);
+			const dx = currentSnapped.x - moveStartSchematicPos.x;
+			const dy = currentSnapped.y - moveStartSchematicPos.y;
+
+			if (dx !== 0 || dy !== 0) {
+				// Move selected components
+				for (const comp of schematic.components) {
+					if (selectedIds.has(comp.id)) {
+						comp.x += dx;
+						comp.y += dy;
+						// Also update pin positions
+						for (const pin of comp.pins) {
+							pin.x += dx;
+							pin.y += dy;
+						}
+					}
+				}
+
+				// Move selected wires
+				for (const wire of schematic.wires) {
+					if (selectedWireIds.has(wire.id)) {
+						wire.x1 += dx;
+						wire.y1 += dy;
+						wire.x2 += dx;
+						wire.y2 += dy;
+					}
+				}
+
+				// Move selected directives
+				if (schematic.directives) {
+					for (const directive of schematic.directives) {
+						if (selectedDirectiveIds.has(directive.id)) {
+							if (directive.x !== undefined) directive.x += dx;
+							if (directive.y !== undefined) directive.y += dy;
+						}
+					}
+				}
+
+				// Update start position for next delta
+				moveStartSchematicPos = currentSnapped;
+			}
+		} else if (isDragging && dragStart && !isMoving) {
+			// Pan the view (only when not moving items)
 			const dx = (e.offsetX - dragStart.x) * dpr;
 			const dy = (e.offsetY - dragStart.y) * dpr;
 			view.offsetX += dx;
@@ -1140,13 +1274,15 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 
 		isDragging = false;
 		dragStart = null;
+		isMoving = false;
+		moveStartSchematicPos = null;
 	}
 
 	function handleDoubleClick(e: MouseEvent) {
 		const clickPos = screenToSchematic(e.offsetX, e.offsetY);
 
 		// Check if clicking on a directive first
-		if (findDirectiveAt(clickPos) && oneditdirectives) {
+		if (findDirectiveAtPos(clickPos) && oneditdirectives) {
 			oneditdirectives();
 			return;
 		}
@@ -1262,13 +1398,17 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 			}
 		}
 
-		// Delete selected components and wires
+		// Delete selected components, wires, and directives
 		if (e.key === 'Delete' || e.key === 'Backspace') {
-			if (selectedIds.size > 0 || selectedWireIds.size > 0) {
+			if (selectedIds.size > 0 || selectedWireIds.size > 0 || selectedDirectiveIds.size > 0) {
 				schematic.components = schematic.components.filter(c => !selectedIds.has(c.id));
 				schematic.wires = schematic.wires.filter(w => !selectedWireIds.has(w.id));
+				if (schematic.directives) {
+					schematic.directives = schematic.directives.filter(d => !selectedDirectiveIds.has(d.id));
+				}
 				selectedIds = new Set();
 				selectedWireIds = new Set();
+				selectedDirectiveIds = new Set();
 				render();
 				return;
 			}
@@ -1307,6 +1447,9 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		wireDraw = { ...DEFAULT_WIRE_DRAW };
 		selectedIds = new Set();
 		selectedWireIds = new Set();
+		selectedDirectiveIds = new Set();
+		isMoving = false;
+		moveStartSchematicPos = null;
 		render();
 	}
 
@@ -1317,6 +1460,9 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		mode = 'select';
 		selectedIds = new Set();
 		selectedWireIds = new Set();
+		selectedDirectiveIds = new Set();
+		isMoving = false;
+		moveStartSchematicPos = null;
 		render();
 	}
 

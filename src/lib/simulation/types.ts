@@ -28,9 +28,10 @@ export type SimulationResult = RealResult | ComplexResult;
 export interface SimulationStatus { initialized: boolean; running: boolean; error: string | null; }
 
 export interface SimulationWorkerAPI {
-	init(): Promise<void>;
+	init(): Promise<string>;
 	run(netlist: string): Promise<SimulationResult>;
 	getStatus(): SimulationStatus;
 	getErrors(): string[];
+	getInitInfo(): string;
 }
 

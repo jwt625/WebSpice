@@ -29,10 +29,11 @@ function getWorker(): Comlink.Remote<SimulationWorkerAPI> {
 /**
  * Initialize the simulation engine
  * Must be called before running simulations
+ * @returns NGSpice initialization info string
  */
-export async function initSimulation(): Promise<void> {
+export async function initSimulation(): Promise<string> {
 	const api = getWorker();
-	await api.init();
+	return await api.init();
 }
 
 /**

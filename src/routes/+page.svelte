@@ -10,6 +10,7 @@
 
 	let status = $state('Not initialized');
 	let simResult = $state<SimulationResult | null>(null);
+	let simInitInfo = $state<string>('');
 	let timeData = $state<number[]>([]);
 	let schematic = $state<Schematic>({ components: [], wires: [], junctions: [], directives: [], parameters: {}, models: [] });
 	let probes = $state<Probe[]>([]);
@@ -53,7 +54,7 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 	onMount(async () => {
 		status = 'Initializing NGSpice...';
 		try {
-			await initSimulation();
+			simInitInfo = await initSimulation();
 			status = 'NGSpice ready';
 		} catch (err) {
 			status = `Init failed: ${err}`;
@@ -581,12 +582,17 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 						/>
 					</div>
 				</ResizablePanel>
-				{#if simResult}
+				{#if simInitInfo || simResult}
 					<div class="info-panel" style="height: {initialSizes.info}px">
 						<h3>Simulation Info</h3>
 						<div class="result-info">
-							<p><strong>Variables:</strong> {simResult.variableNames.join(', ')}</p>
-							<p><strong>Points:</strong> {simResult.numPoints}</p>
+							{#if simInitInfo}
+								<pre class="init-info">{simInitInfo}</pre>
+							{/if}
+							{#if simResult}
+								<p><strong>Variables:</strong> {simResult.variableNames.join(', ')}</p>
+								<p><strong>Points:</strong> {simResult.numPoints}</p>
+							{/if}
 						</div>
 					</div>
 				{/if}
@@ -769,6 +775,19 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 		margin: var(--spacing-xs) 0;
 		font-size: var(--font-size-xs);
 		color: var(--text-secondary);
+	}
+
+	.result-info .init-info {
+		margin: 0 0 var(--spacing-sm) 0;
+		padding: var(--spacing-xs);
+		font-size: var(--font-size-xs);
+		color: var(--text-secondary);
+		background: var(--bg-tertiary);
+		border-radius: 3px;
+		white-space: pre-wrap;
+		word-break: break-word;
+		max-height: 120px;
+		overflow-y: auto;
 	}
 
 	.statusbar {

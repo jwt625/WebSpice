@@ -13,10 +13,11 @@ class SimulationWorker implements SimulationWorkerAPI {
 	private running = false;
 	private lastError: string | null = null;
 	private errors: string[] = [];
+	private initInfo: string = '';
 
-	async init(): Promise<void> {
+	async init(): Promise<string> {
 		if (this.initialized) {
-			return;
+			return this.initInfo;
 		}
 
 		try {
@@ -24,8 +25,8 @@ class SimulationWorker implements SimulationWorkerAPI {
 			await this.sim.start();
 			this.initialized = true;
 			this.lastError = null;
-			console.log('[SimWorker] NGSpice initialized');
-			console.log('[SimWorker] Init info:', this.sim.getInitInfo());
+			this.initInfo = this.sim.getInitInfo();
+			return this.initInfo;
 		} catch (err) {
 			this.lastError = err instanceof Error ? err.message : String(err);
 			throw err;
@@ -84,6 +85,10 @@ class SimulationWorker implements SimulationWorkerAPI {
 
 	getErrors(): string[] {
 		return this.errors;
+	}
+
+	getInitInfo(): string {
+		return this.initInfo;
 	}
 }
 
