@@ -161,6 +161,9 @@ import { pointOnWire, pointsEqual } from '$lib/netlist/connectivity';
 		// Draw node labels (if available)
 		drawNodeLabels();
 
+		// Draw SPICE directives
+		drawDirectives();
+
 		// Draw probe cursor overlay in probe mode
 		if (mode === 'probe') {
 			drawProbeCursor();
@@ -390,6 +393,40 @@ import { pointOnWire, pointsEqual } from '$lib/netlist/connectivity';
 			// Draw text
 			ctx.fillStyle = label.isGround ? '#00ff00' : '#88ccff';
 			ctx.fillText(text, label.x + 3 + padding, label.y - 2 - padding);
+		}
+	}
+
+	/** Draw SPICE directives as text on the canvas */
+	function drawDirectives() {
+		if (!ctx || !schematic.directives || schematic.directives.length === 0) return;
+
+		const fontSize = Math.max(10, 14 / view.scale);
+		ctx.font = `${fontSize}px monospace`;
+		ctx.textAlign = 'left';
+		ctx.textBaseline = 'top';
+
+		for (const directive of schematic.directives) {
+			// Only draw directives that have position
+			if (directive.x === undefined || directive.y === undefined) continue;
+
+			const text = directive.text;
+			const metrics = ctx.measureText(text);
+			const padding = 3 / view.scale;
+			const bgWidth = metrics.width + padding * 2;
+			const bgHeight = fontSize + padding * 2;
+
+			// Draw background - dark purple for directives
+			ctx.fillStyle = '#2a1a3a';
+			ctx.fillRect(directive.x - padding, directive.y - padding, bgWidth, bgHeight);
+
+			// Draw border
+			ctx.strokeStyle = '#6a4a8a';
+			ctx.lineWidth = 1 / view.scale;
+			ctx.strokeRect(directive.x - padding, directive.y - padding, bgWidth, bgHeight);
+
+			// Draw text - light purple/magenta for SPICE directives
+			ctx.fillStyle = '#cc88ff';
+			ctx.fillText(text, directive.x, directive.y);
 		}
 	}
 

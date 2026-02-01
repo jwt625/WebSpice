@@ -111,12 +111,35 @@ export interface Junction {
 	y: number;
 }
 
+/** SPICE directive types */
+export type DirectiveType = 'tran' | 'ac' | 'dc' | 'op' | 'param' | 'model' | 'other';
+
+/** SPICE directive (simulation commands, parameters, models) */
+export interface SpiceDirective {
+	id: string;
+	type: DirectiveType;
+	text: string;           // Full directive text (e.g., ".tran 1u 10m")
+	x?: number;             // Optional position for display on canvas
+	y?: number;
+}
+
+/** SPICE model definition */
+export interface SpiceModel {
+	name: string;           // Model name (e.g., "D1N4148")
+	type: string;           // Model type (e.g., "D", "NPN", "NMOS")
+	params: string;         // Model parameters (e.g., "Is=2.52e-9 Rs=0.568 ...")
+	description?: string;   // Optional description
+}
+
 /** Complete schematic state */
 export interface Schematic {
 	components: Component[];
 	wires: Wire[];
 	junctions: Junction[];  // Explicit wire-to-wire connections
 	nodeLabels?: NodeLabel[];  // Node labels from netlist generation
+	directives?: SpiceDirective[];  // SPICE directives (.tran, .ac, etc.)
+	parameters?: Record<string, string>;  // .param definitions (name -> value)
+	models?: SpiceModel[];  // .model definitions
 }
 
 /** Node label for display on schematic */

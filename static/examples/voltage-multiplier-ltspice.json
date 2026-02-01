@@ -1123,9 +1123,29 @@
         "x": 272,
         "y": 352
       }
-    ]
+    ],
+    "directives": [
+      {
+        "id": "dir0",
+        "type": "tran",
+        "text": ".tran 0 20m 0 10u",
+        "x": 112,
+        "y": 400
+      },
+      {
+        "id": "dir1",
+        "type": "param",
+        "text": ".param CC=1u",
+        "x": 112,
+        "y": 440
+      }
+    ],
+    "parameters": {
+      "CC": "1u"
+    },
+    "models": []
   },
   "netlist": "",
-  "savedAt": "2026-02-01T19:05:20.363Z",
+  "savedAt": "2026-02-01T19:40:36.273Z",
   "source": "ltspice-asc"
 }

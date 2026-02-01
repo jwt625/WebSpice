@@ -357,7 +357,10 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 			schematic: {
 				components: schematic.components,
 				wires: schematic.wires,
-				junctions: schematic.junctions
+				junctions: schematic.junctions,
+				directives: schematic.directives,
+				parameters: schematic.parameters,
+				models: schematic.models
 			},
 			netlist: netlistInput,
 			savedAt: new Date().toISOString()
@@ -401,11 +404,14 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 				return;
 			}
 
-			// Load schematic
+			// Load schematic including directives, parameters, and models
 			schematic = {
 				components: data.schematic.components || [],
 				wires: data.schematic.wires || [],
-				junctions: data.schematic.junctions || []
+				junctions: data.schematic.junctions || [],
+				directives: data.schematic.directives,
+				parameters: data.schematic.parameters,
+				models: data.schematic.models
 			};
 
 			// Load netlist if present

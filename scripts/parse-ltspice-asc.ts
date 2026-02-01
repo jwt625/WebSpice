@@ -39,10 +39,27 @@ interface Junction {
   y: number;
 }
 
+interface SpiceDirective {
+  id: string;
+  type: 'tran' | 'ac' | 'dc' | 'op' | 'param' | 'model' | 'other';
+  text: string;
+  x?: number;
+  y?: number;
+}
+
+interface SpiceModel {
+  name: string;
+  type: string;
+  params: string;
+}
+
 interface Schematic {
   components: Component[];
   wires: Wire[];
   junctions: Junction[];
+  directives?: SpiceDirective[];
+  parameters?: Record<string, string>;
+  models?: SpiceModel[];
 }
 
 // LTSpice symbol to WebSpice type mapping
@@ -160,14 +177,63 @@ interface ParsedSymbol {
   pinPositions: Array<{ name: string; x: number; y: number }>;  // Absolute pin positions
 }
 
-function parseAscFile(content: string): { symbols: ParsedSymbol[]; wires: Wire[]; flags: Array<{ x: number; y: number; name: string }> } {
+/** Parse a SPICE directive and determine its type */
+function parseDirectiveType(text: string): SpiceDirective['type'] {
+  const lower = text.toLowerCase();
+  if (lower.startsWith('.tran')) return 'tran';
+  if (lower.startsWith('.ac')) return 'ac';
+  if (lower.startsWith('.dc')) return 'dc';
+  if (lower.startsWith('.op')) return 'op';
+  if (lower.startsWith('.param')) return 'param';
+  if (lower.startsWith('.model')) return 'model';
+  return 'other';
+}
+
+/** Parse .param directive: .param name=value */
+function parseParamDirective(text: string): { name: string; value: string } | null {
+  // Match: .param name=value or .param name = value
+  const match = text.match(/\.param\s+(\w+)\s*=\s*(.+)/i);
+  if (match) {
+    return { name: match[1], value: match[2].trim() };
+  }
+  return null;
+}
+
+/** Parse .model directive: .model name type(params) */
+function parseModelDirective(text: string): SpiceModel | null {
+  // Match: .model name type(params) or .model name type (params)
+  const match = text.match(/\.model\s+(\S+)\s+(\w+)\s*\(([^)]+)\)/i);
+  if (match) {
+    return {
+      name: match[1],
+      type: match[2].toUpperCase(),
+      params: match[3].trim()
+    };
+  }
+  return null;
+}
+
+interface ParsedAscResult {
+  symbols: ParsedSymbol[];
+  wires: Wire[];
+  flags: Array<{ x: number; y: number; name: string }>;
+  directives: SpiceDirective[];
+  parameters: Record<string, string>;
+  models: SpiceModel[];
+}
+
+function parseAscFile(content: string): ParsedAscResult {
   const lines = content.split('\n');
   const symbols: ParsedSymbol[] = [];
   const wires: Wire[] = [];
   const flags: Array<{ x: number; y: number; name: string }> = [];
+  const directives: SpiceDirective[] = [];
+  const parameters: Record<string, string> = {};
+  const models: SpiceModel[] = [];
 
   let currentSymbol: ParsedSymbol | null = null;
   let wireId = 0;
+  let directiveId = 0;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -182,6 +248,38 @@ function parseAscFile(content: string): { symbols: ParsedSymbol[]; wires: Wire[]
         x2: parseInt(parts[3], 10) * SCALE,
         y2: parseInt(parts[4], 10) * SCALE,
       });
+    } else if (trimmed.startsWith('TEXT ')) {
+      // TEXT x y alignment size !directive
+      // e.g., TEXT -24 360 Left 2 !.tran 0 .5m
+      // The ! prefix indicates a SPICE command
+      const match = trimmed.match(/^TEXT\s+(-?\d+)\s+(-?\d+)\s+\S+\s+\d+\s+!(.+)$/);
+      if (match) {
+        const x = parseInt(match[1], 10) * SCALE;
+        const y = parseInt(match[2], 10) * SCALE;
+        const directiveText = match[3].trim();
+        const type = parseDirectiveType(directiveText);
+
+        directives.push({
+          id: `dir${directiveId++}`,
+          type,
+          text: directiveText,
+          x,
+          y
+        });
+
+        // Also extract into structured data
+        if (type === 'param') {
+          const param = parseParamDirective(directiveText);
+          if (param) {
+            parameters[param.name] = param.value;
+          }
+        } else if (type === 'model') {
+          const model = parseModelDirective(directiveText);
+          if (model) {
+            models.push(model);
+          }
+        }
+      }
     } else if (trimmed.startsWith('SYMBOL ')) {
       // SYMBOL type x y rotation
       // e.g., SYMBOL cap 144 160 R0
@@ -222,7 +320,7 @@ function parseAscFile(content: string): { symbols: ParsedSymbol[]; wires: Wire[]
     }
   }
 
-  return { symbols, wires, flags };
+  return { symbols, wires, flags, directives, parameters, models };
 }
 
 // Calculate WebSpice component position so its pins align with LTSpice pin positions
@@ -326,6 +424,9 @@ function convertToSchematic(parsed: ReturnType<typeof parseAscFile>): Schematic 
     components,
     wires: parsed.wires,
     junctions,
+    directives: parsed.directives,
+    parameters: parsed.parameters,
+    models: parsed.models,
   };
 }
 
@@ -348,6 +449,9 @@ async function main() {
   console.log(`  Symbols: ${parsed.symbols.length}`);
   console.log(`  Wires: ${parsed.wires.length}`);
   console.log(`  Flags: ${parsed.flags.length}`);
+  console.log(`  Directives: ${parsed.directives.length}`);
+  console.log(`  Parameters: ${Object.keys(parsed.parameters).length}`);
+  console.log(`  Models: ${parsed.models.length}`);
 
   console.log('Converting to WebSpice format...');
   const schematic = convertToSchematic(parsed);
@@ -370,6 +474,30 @@ async function main() {
   console.log('\nComponents:');
   for (const comp of schematic.components) {
     console.log(`  ${comp.attributes.InstName}: ${comp.type} at (${comp.x}, ${comp.y}) rot=${comp.rotation} mirror=${comp.mirror}`);
+  }
+
+  // Print directives
+  if (schematic.directives && schematic.directives.length > 0) {
+    console.log('\nDirectives:');
+    for (const dir of schematic.directives) {
+      console.log(`  [${dir.type}] ${dir.text}`);
+    }
+  }
+
+  // Print parameters
+  if (schematic.parameters && Object.keys(schematic.parameters).length > 0) {
+    console.log('\nParameters:');
+    for (const [name, value] of Object.entries(schematic.parameters)) {
+      console.log(`  ${name} = ${value}`);
+    }
+  }
+
+  // Print models
+  if (schematic.models && schematic.models.length > 0) {
+    console.log('\nModels:');
+    for (const model of schematic.models) {
+      console.log(`  ${model.name} (${model.type}): ${model.params}`);
+    }
   }
 }
 
