@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Component, SpiceModel } from '$lib/schematic/types';
 	import { ALL_MODELS } from '$lib/models/component-library';
+	import SourceEditModal from './SourceEditModal.svelte';
 
 	let {
 		visible = $bindable(false),
@@ -13,6 +14,11 @@
 		models?: SpiceModel[];
 		onsave?: (component: Component) => void;
 	} = $props();
+
+	// Check if this is a source component that should use the specialized modal
+	function isSourceComponent(comp: Component | null): boolean {
+		return comp?.type === 'voltage' || comp?.type === 'current';
+	}
 
 	// Local editing state
 	let instName = $state('');
@@ -114,9 +120,12 @@
 	}
 </script>
 
+<!-- Use specialized SourceEditModal for voltage/current sources -->
+{#if visible && component && isSourceComponent(component)}
+	<SourceEditModal bind:visible bind:component {onsave} />
+{:else if visible && component}
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-{#if visible && component}
 	<div class="modal-backdrop" onclick={close} onkeydown={handleKeyDown}>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
