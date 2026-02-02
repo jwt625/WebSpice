@@ -17,6 +17,15 @@
       "schematicFile": "/examples/voltage-multiplier-ltspice.json",
       "netlistFile": "/test-circuits/voltage-multiplier.cir",
       "previewImage": "/previewImage/voltage-multiplier.png"
+    },
+    {
+      "id": "coupled-lc-resonators",
+      "name": "Coupled LC Resonators",
+      "description": "Circuit QED-like coupled microwave resonators at 5 GHz",
+      "category": "analog",
+      "schematicFile": "/examples/coupled-lc-resonators.json",
+      "netlistFile": null,
+      "previewImage": "/previewImage/coupled-LC.png"
     }
   ]
 }

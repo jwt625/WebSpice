@@ -464,7 +464,7 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 	}
 
 	/** Handle load example from landing page */
-	async function handleLoadExample(example: { id: string; name: string; schematicFile: string; netlistFile: string }) {
+	async function handleLoadExample(example: { id: string; name: string; schematicFile: string; netlistFile: string | null }) {
 		try {
 			status = `Loading ${example.name}...`;
 
@@ -475,13 +475,6 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 			}
 			const schematicData = await schematicResponse.json();
 
-			// Load netlist
-			const netlistResponse = await fetch(`${base}${example.netlistFile}`);
-			if (!netlistResponse.ok) {
-				throw new Error(`Failed to load netlist: ${netlistResponse.statusText}`);
-			}
-			const netlistText = await netlistResponse.text();
-
 			// Update state with defaults for directive fields
 			schematic = {
 				components: schematicData.schematic.components || [],
@@ -491,7 +484,22 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 				parameters: schematicData.schematic.parameters || {},
 				models: schematicData.schematic.models || []
 			};
-			netlistInput = netlistText;
+
+			// Load netlist from file, or use embedded netlist, or generate from schematic
+			if (example.netlistFile) {
+				const netlistResponse = await fetch(`${base}${example.netlistFile}`);
+				if (!netlistResponse.ok) {
+					throw new Error(`Failed to load netlist: ${netlistResponse.statusText}`);
+				}
+				netlistInput = await netlistResponse.text();
+			} else if (schematicData.netlist) {
+				// Use netlist embedded in schematic JSON
+				netlistInput = schematicData.netlist;
+			} else {
+				// Generate netlist from schematic
+				generateNetlistFromSchematic();
+			}
+
 			showLanding = false;
 			status = `Loaded example: ${example.name}`;
 		} catch (err) {
