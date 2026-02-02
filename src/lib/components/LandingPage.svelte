@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { base } from '$app/paths';
 
 	interface Example {
@@ -16,6 +16,11 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
+	// Background slideshow state
+	let previewImages = $state<string[]>([]);
+	let activeIndex = $state(0);
+	let slideshowInterval: ReturnType<typeof setInterval> | null = null;
+
 	let { onnewproject, onopenfile, onloadexample }: {
 		onnewproject: () => void;
 		onopenfile: () => void;
@@ -31,10 +36,29 @@
 			}
 			const data = await response.json();
 			examples = data.examples;
+
+			// Extract preview images for background slideshow
+			previewImages = data.examples
+				.filter((ex: Example) => ex.previewImage)
+				.map((ex: Example) => ex.previewImage as string);
+
+			// Start slideshow if we have images
+			if (previewImages.length > 1) {
+				slideshowInterval = setInterval(() => {
+					activeIndex = (activeIndex + 1) % previewImages.length;
+				}, 5000); // Change image every 5 seconds
+			}
+
 			loading = false;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load examples';
 			loading = false;
+		}
+	});
+
+	onDestroy(() => {
+		if (slideshowInterval) {
+			clearInterval(slideshowInterval);
 		}
 	});
 
@@ -65,6 +89,19 @@
 </script>
 
 <div class="landing-page">
+	<!-- Background slideshow -->
+	{#if previewImages.length > 0}
+		<div class="background-slideshow">
+			{#each previewImages as image, index}
+				<img
+					src="{base}{image}"
+					alt=""
+					class="bg-image"
+					class:active={index === activeIndex}
+				/>
+			{/each}
+		</div>
+	{/if}
 	<div class="landing-content">
 		<div class="hero">
 			<h1 class="hero-title">WebSpice</h1>
@@ -141,9 +178,45 @@
 		justify-content: center;
 		background: var(--bg-primary);
 		padding: 2rem;
+		position: relative;
+	}
+
+	.background-slideshow {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		overflow: hidden;
+		pointer-events: none;
+	}
+
+	.bg-image {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		min-width: 100%;
+		min-height: 100%;
+		width: auto;
+		height: auto;
+		object-fit: cover;
+		opacity: 0;
+		transition: opacity 1s ease-in-out;
+	}
+
+	.bg-image.active {
+		opacity: 0.5;
 	}
 
 	.landing-content {
+		position: relative;
+		z-index: 1;
+	}
+
+	.landing-content {
+		position: relative;
+		z-index: 1;
 		max-width: 800px;
 		width: 100%;
 		display: flex;
