@@ -6,10 +6,12 @@
 	let {
 		traces = [],
 		timeData = [],
+		xAxisType = 'time',
 		ontracetoggle
 	}: {
 		traces: TraceData[];
 		timeData: number[];
+		xAxisType?: 'time' | 'frequency';
 		ontracetoggle?: (traceId: string) => void;
 	} = $props();
 
@@ -185,6 +187,7 @@
 	function formatValue(v: number, u: string): string {
 		const a = Math.abs(v);
 		if (a === 0) return `0${u}`;
+		if (a >= 1e9) return `${(v/1e9).toFixed(1)}G${u}`;
 		if (a >= 1e6) return `${(v/1e6).toFixed(1)}M${u}`;
 		if (a >= 1e3) return `${(v/1e3).toFixed(1)}k${u}`;
 		if (a >= 1) return `${v.toFixed(2)}${u}`;
@@ -194,12 +197,22 @@
 		return `${(v*1e12).toFixed(1)}p${u}`;
 	}
 
+	/** Format X-axis value based on axis type */
+	function formatXValue(v: number): string {
+		if (xAxisType === 'frequency') {
+			return formatValue(v, 'Hz');
+		}
+		return formatValue(v, 's');
+	}
+
 	function getTraceUnit(traceName: string): string {
 		const trace = traces.find(t => t.name === traceName);
 		if (!trace) return '';
 		if (trace.type === 'current') return 'A';
 		if (trace.type === 'voltage') return 'V';
 		if (trace.type === 'frequency') return 'Hz';
+		if (trace.type === 'magnitude') return 'dB';
+		if (trace.type === 'phase') return '°';
 		return '';
 	}
 
@@ -243,7 +256,7 @@
 		ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(bx, by, 120, 20 + vals.size * lh);
 		ctx.strokeStyle = cur.color; ctx.lineWidth = 1; ctx.strokeRect(bx, by, 120, 20 + vals.size * lh);
 		ctx.fillStyle = cur.color; ctx.font = 'bold 11px monospace';
-		ctx.fillText(`${cur.id}: ${formatValue(cur.x, 's')}`, bx + 4, by + 14);
+		ctx.fillText(`${cur.id}: ${formatXValue(cur.x)}`, bx + 4, by + 14);
 		ctx.font = '10px monospace'; let yo = by + 28;
 		for (const [name, val] of vals) {
 			const t = traces.find(tr => tr.name === name); if (!t?.visible) continue;

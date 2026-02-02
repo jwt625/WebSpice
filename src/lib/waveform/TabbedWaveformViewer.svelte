@@ -108,6 +108,7 @@
 			<WaveformViewer
 				traces={activeTab.traces}
 				{timeData}
+				xAxisType={activeTab.xAxisType || 'time'}
 				ontracetoggle={handleTraceToggle}
 			/>
 			{#if deleteMode}

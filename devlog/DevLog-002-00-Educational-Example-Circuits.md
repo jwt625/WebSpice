@@ -174,6 +174,97 @@ Preview images should be captured at a consistent zoom level showing the complet
 | Common Emitter Amplifier | TODO | TODO | TODO |
 | Colpitts Oscillator | TODO | TODO | TODO |
 
+## Advanced Filter Design Notes
+
+### Passive LC Filters vs. Active RC Filters
+
+There are two fundamentally different approaches to building higher-order filters:
+
+#### Passive LC Filters
+- Uses **inductors, capacitors, and resistors** only
+- No power supply needed
+- Works well at **RF frequencies** (MHz to GHz)
+- Inductors are practical at high frequencies (small values like µH or nH)
+- Used in: RF front-ends, antenna matching, power supplies, EMI filtering
+
+#### Active RC Filters (Op-Amp Based)
+- Uses **op-amps, resistors, and capacitors** - **NO inductors**
+- Requires power supply for op-amps
+- Works well at **audio/low frequencies** (Hz to ~100 kHz)
+- Avoids inductors which are problematic at low frequencies:
+  - Bulky and expensive (would need mH to H values)
+  - Lossy (significant DC resistance)
+  - Pick up electromagnetic interference
+- Common topologies: **Sallen-Key**, **Multiple Feedback (MFB)**, **State Variable**
+
+#### Why This Matters - Practical Example
+
+For a 3rd order Butterworth LPF at **1 kHz** with 50Ω impedance:
+- L = 50 / (2π × 1000) = **7.96 mH** ← Large, expensive, lossy inductor!
+
+For a 3rd order Butterworth LPF at **1 MHz** with 50Ω impedance:
+- L = 50 / (2π × 1e6) = **7.96 µH** ← Small, cheap, practical
+
+This is why:
+- **Audio engineers** use op-amp active filters (Sallen-Key, etc.)
+- **RF engineers** use passive LC ladder filters
+
+### Filter Design Theory
+
+#### Butterworth (Maximally Flat) Response
+- Maximally flat magnitude response in passband
+- Rolloff: -20n dB/decade (n = order), so 3rd order = -60 dB/decade
+- At cutoff frequency: -3 dB point
+- No ripple in passband or stopband
+
+**3rd Order Butterworth Normalized g-values** (for 1 rad/s, 1Ω):
+| Element | g-value |
+|---------|---------|
+| g₀ (source R) | 1.0000 |
+| g₁ | 1.0000 |
+| g₂ | 2.0000 |
+| g₃ | 1.0000 |
+| g₄ (load R) | 1.0000 |
+
+#### Chebyshev Type I Response
+- Equiripple in passband, monotonic in stopband
+- Steeper transition band than Butterworth for same order
+- Trade-off: passband ripple for sharper cutoff
+
+**3rd Order Chebyshev (0.5 dB ripple) Normalized g-values**:
+| Element | g-value |
+|---------|---------|
+| g₀ (source R) | 1.0000 |
+| g₁ | 1.5963 |
+| g₂ | 1.0967 |
+| g₃ | 1.5963 |
+| g₄ (load R) | 1.0000 |
+
+#### Denormalization Formulas
+
+For a **T-topology** (L-C-L) passive filter:
+- L = (g × Z₀) / (2π × fc)
+- C = g / (2π × fc × Z₀)
+
+For a **Pi-topology** (C-L-C) passive filter:
+- C = g / (2π × fc × Z₀)
+- L = (g × Z₀) / (2π × fc)
+
+### WebSpice Component Status for Filters
+
+| Filter Type | Required Components | Status |
+|-------------|---------------------|--------|
+| Passive LC (RF) | R, L, C | ✓ Available |
+| Active RC (Audio) | Op-Amp, R, C | ✗ Op-Amp not implemented |
+
+### Planned Filter Examples
+
+| Example | Type | Cutoff | Topology | Status |
+|---------|------|--------|----------|--------|
+| 3rd Order Butterworth LPF | Passive LC | 1 MHz | T-network (L-C-L) | TODO |
+| 3rd Order Chebyshev LPF | Passive LC | 1 MHz | T-network (L-C-L) | TODO |
+| Sallen-Key 2nd Order LPF | Active RC | 1 kHz | Op-Amp based | Blocked (need op-amp) |
+
 ## Next Steps
 
 1. Create schematic JSON files for each new example
@@ -181,4 +272,5 @@ Preview images should be captured at a consistent zoom level showing the complet
 3. Capture preview images
 4. Add entries to examples.json
 5. Test loading from landing page
+6. **Add op-amp component support** to enable active filter examples
 

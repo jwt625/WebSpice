@@ -11,21 +11,39 @@
     },
     {
       "id": "minimal-rc",
-      "name": "RC Low-Pass Filter",
-      "description": "Simple RC circuit with pulse input",
+      "name": "RC Low-Pass Filter (Transient)",
+      "description": "RC low-pass with pulse input, shows time-domain response",
       "category": "basic",
       "schematicFile": "/examples/rc-lowpass.json",
       "netlistFile": "/test-circuits/minimal-rc.cir",
       "previewImage": "/previewImage/rc-lowpass.png"
     },
     {
+      "id": "rc-lowpass-ac",
+      "name": "RC Low-Pass Filter (AC)",
+      "description": "RC low-pass frequency sweep, shows Bode plot (fc=159Hz)",
+      "category": "filters",
+      "schematicFile": "/examples/rc-lowpass-ac.json",
+      "netlistFile": null,
+      "previewImage": "/previewImage/rc-lowpass-ac.png"
+    },
+    {
       "id": "rc-highpass",
-      "name": "RC High-Pass Filter",
-      "description": "High-pass filter with 159 Hz cutoff",
+      "name": "RC High-Pass Filter (Transient)",
+      "description": "RC high-pass with sine input, shows time-domain response",
       "category": "basic",
       "schematicFile": "/examples/rc-highpass.json",
       "netlistFile": null,
       "previewImage": "/previewImage/rc-highpass.png"
+    },
+    {
+      "id": "rc-highpass-ac",
+      "name": "RC High-Pass Filter (AC)",
+      "description": "RC high-pass frequency sweep, shows Bode plot (fc=159Hz)",
+      "category": "filters",
+      "schematicFile": "/examples/rc-highpass-ac.json",
+      "netlistFile": null,
+      "previewImage": "/previewImage/rc-highpass-ac.png"
     },
     {
       "id": "rlc-bandpass",

@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { base } from '$app/paths';
 	import { initSimulation, runSimulation, terminateSimulation, type SimulationResult, type RealDataType } from '$lib/simulation';
-	import { TabbedWaveformViewer, type TraceData, type WaveformTab, getTraceColor } from '$lib/waveform';
+	import { TabbedWaveformViewer, type TraceData, type WaveformTab, getTraceColor, processAcResults } from '$lib/waveform';
 	import { NetlistEditor } from '$lib/editor';
 	import { SchematicCanvas, type Schematic, type Probe, type Component } from '$lib/schematic';
 	import { ResizablePanel, HelpModal, LandingPage, DirectiveModal, ComponentEditModal } from '$lib/components';
@@ -88,19 +88,62 @@ Vin in 0 PULSE(0 5 0 1n 1n 0.5m 1m)
 			simResult = result;
 			status = `Simulation complete: ${result.numPoints} points, ${result.numVariables} variables`;
 
-			// Extract time data from result
-			for (const data of result.data) {
-				if (data.type === 'time') {
-					timeData = data.values as number[];
-					break;
+			if (result.dataType === 'complex') {
+				// AC analysis - create magnitude and phase tabs
+				handleAcResults();
+			} else {
+				// Transient analysis - extract time data
+				for (const data of result.data) {
+					if (data.type === 'time') {
+						timeData = data.values as number[];
+						break;
+					}
 				}
+				// Auto-populate all simulation variables to the active tab
+				addAllSimulationTracesToActiveTab();
 			}
-
-			// Auto-populate all simulation variables to the active tab
-			addAllSimulationTracesToActiveTab();
 		} catch (err) {
 			status = `Simulation error: ${err}`;
 		}
+	}
+
+	/** Handle AC analysis results - create magnitude and phase tabs */
+	function handleAcResults() {
+		if (!simResult || simResult.dataType !== 'complex') return;
+
+		const { frequencyData, magnitudeTraces, phaseTraces } = processAcResults(simResult.data);
+
+		if (frequencyData.length === 0) {
+			status = 'AC analysis error: No frequency data found';
+			return;
+		}
+
+		// Use frequency data as the X-axis (stored in timeData for compatibility)
+		timeData = frequencyData;
+
+		// Create or update tabs for magnitude and phase
+		const magTabId = 'ac-magnitude';
+		const phaseTabId = 'ac-phase';
+
+		const newTabs: WaveformTab[] = [
+			{
+				id: magTabId,
+				name: 'Magnitude (dB)',
+				traces: magnitudeTraces,
+				xAxisType: 'frequency'
+			},
+			{
+				id: phaseTabId,
+				name: 'Phase (°)',
+				traces: phaseTraces,
+				xAxisType: 'frequency'
+			}
+		];
+
+		waveformTabs = newTabs;
+		activeTabId = magTabId;
+
+		status = `AC analysis complete: ${simResult.numPoints} points, ${magnitudeTraces.length} traces`;
 	}
 
 	/** Add all simulation variables as traces to the active tab */

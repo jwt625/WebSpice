@@ -1,9 +1,11 @@
 /** Waveform viewer types */
 
+export type TraceType = 'voltage' | 'current' | 'time' | 'frequency' | 'magnitude' | 'phase' | 'notype';
+
 export interface TraceData {
 	id: string;
 	name: string;
-	type: 'voltage' | 'current' | 'time' | 'frequency' | 'notype';
+	type: TraceType;
 	values: number[];
 	color: TraceColor;
 	visible: boolean;
@@ -29,6 +31,7 @@ export interface WaveformTab {
 	id: string;
 	name: string;
 	traces: TraceData[];
+	xAxisType?: 'time' | 'frequency';
 }
 
 const TRACE_COLORS: TraceColor[] = [
