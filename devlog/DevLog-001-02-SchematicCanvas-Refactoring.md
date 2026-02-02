@@ -1,7 +1,7 @@
 # DevLog 001-02: SchematicCanvas Refactoring
 
-**Date:** 2026-02-01
-**Status:** In Progress
+**Date:** 2026-02-01 (Round 1), 2026-02-02 (Round 2)
+**Status:** Complete
 **Related Issues:** N/A
 **Depends On:** DevLog-001-01
 
@@ -160,3 +160,141 @@ After each phase:
    - Phase 5: Visual rendering of all elements
    - Phase 6: Full integration test
 
+---
+
+## Round 2: State Machine Refactoring
+
+**Date:** 2026-02-02
+**Goal:** Reduce coupling by introducing clear state management architecture
+
+### Problem Analysis
+
+The component remains at 1,179 lines because handlers are tightly coupled to state. Every handler function directly reads AND writes multiple state variables. For example, `handleMouseDown` touches: mode, selectedIds, selectedWireIds, selectedDirectiveIds, isMoving, moveStartSchematicPos, dragStart, and reads from schematic.
+
+Current state inventory (15+ separate $state calls):
+- Canvas/View: canvas, ctx, view, grid, container, resizeObserver
+- Interaction: isDragging, dragStart, mousePos, schematicPos
+- Mode: mode
+- Selection: selectedIds, selectedWireIds, selectedDirectiveIds
+- Move: isMoving, moveStartSchematicPos
+- Placement: placingType, placingRotation, placingMirror
+- Wire Drawing: wireDraw
+- Probe: probeState
+- Counters: componentCounters
+
+### Architecture: State Machine + Command Pattern
+
+Separate concerns into:
+1. State - what data exists (EditorState interface)
+2. Actions - what can happen (discriminated union)
+3. Reducer - how state changes (pure function)
+4. Input Mapper - event to action translation
+
+### Target Structure
+
+```
+src/lib/schematic/
+  SchematicCanvas.svelte     (~300 lines) - Canvas, render, event binding
+  editor/
+    index.ts                 - Re-exports
+    state.ts                 (~80 lines)  - EditorState, SelectionState, ModeState types
+    actions.ts               (~60 lines)  - EditorAction union type
+    reducer.ts               (~250 lines) - State transition logic
+    input-mapper.ts          (~150 lines) - MouseEvent/KeyboardEvent to Action[]
+    schematic-mutations.ts   (~100 lines) - Schematic modification helpers
+  canvas/                    (existing, ~650 lines)
+```
+
+### Implementation Phases
+
+#### Phase 2.1: Define State Types
+Create `editor/state.ts` with:
+- EditorState interface (consolidated state)
+- SelectionState interface
+- ModeState discriminated union (idle, placing, drawing-wire, moving, probing, dragging-view)
+- Initial state factory function
+
+#### Phase 2.2: Define Actions
+Create `editor/actions.ts` with EditorAction union:
+- View: PAN, ZOOM, RESET_VIEW
+- Mode: SET_MODE, CANCEL
+- Selection: SELECT, CLEAR_SELECTION
+- Schematic: PLACE_COMPONENT, ADD_WIRE, DELETE_ITEMS, MOVE_ITEMS, ROTATE_SELECTED, MIRROR_SELECTED
+- Wire: START_WIRE, COMMIT_WIRE_SEGMENT
+- Probe: PROBE_START, PROBE_COMPLETE
+
+#### Phase 2.3: Implement Reducer
+Create `editor/reducer.ts`:
+- Pure function: (state, action, schematic) => { state, schematicMutations? }
+- Handle each action type
+- Return new state (immutable updates)
+
+#### Phase 2.4: Implement Input Mapper
+Create `editor/input-mapper.ts`:
+- mapMouseDown(e, state, pos, hitTest) => Action[]
+- mapMouseMove(e, state, pos) => Action[]
+- mapMouseUp(e, state, pos) => Action[]
+- mapKeyDown(e, state) => Action[]
+
+#### Phase 2.5: Refactor SchematicCanvas
+- Replace 15+ $state calls with single EditorState
+- Add dispatch(action) function
+- Replace event handlers with input mapper calls
+- Keep render() and drawing logic
+
+#### Phase 2.6: Extract Schematic Mutations
+Create `editor/schematic-mutations.ts`:
+- applyMutations(schematic, mutations)
+- Mutation types for add/delete/move operations
+
+### Progress Tracking (Round 2)
+
+- [x] Phase 2.1: Define state types (128 lines)
+- [x] Phase 2.2: Define actions (112 lines)
+- [x] Phase 2.3: Implement reducer (572 lines)
+- [x] Phase 2.4: Implement input mapper (319 lines)
+- [x] Phase 2.5: Refactor SchematicCanvas
+- [x] Phase 2.6: Extract schematic mutations (107 lines)
+
+### Final Results
+
+**Round 1:** 1,538 -> 1,179 lines (359 lines extracted to canvas/ module)
+**Round 2:** 1,179 -> 803 lines (376 lines reduction + 1,248 lines in editor/ module)
+
+**Final Architecture:**
+```
+src/lib/schematic/
+  SchematicCanvas.svelte        803 lines  (main component)
+  canvas/                       650 lines  (drawing, geometry, hit-testing, probes)
+  editor/                     1,248 lines  (state machine architecture)
+    state.ts                    128 lines  (EditorState, ModeState types)
+    actions.ts                  112 lines  (EditorAction discriminated union)
+    reducer.ts                  572 lines  (pure state transition logic)
+    input-mapper.ts             319 lines  (event to action translation)
+    schematic-mutations.ts      107 lines  (schematic modification helpers)
+    index.ts                     10 lines  (re-exports)
+```
+
+**Total codebase:** 2,701 lines (803 + 650 + 1,248) vs original 1,538 lines
+
+**Benefits achieved:**
+1. Clear separation of concerns (state vs actions vs reducers vs mutations)
+2. Testable pure functions (reducer, input-mapper)
+3. Single source of truth for editor state
+4. Discriminated unions provide type safety for mode handling
+5. Event handlers are now thin wrappers that dispatch actions
+6. SchematicCanvas is now focused on rendering and event binding
+
+### Bugs Fixed During Refactoring
+
+1. **Wire preview from origin**: Fixed dashed preview line showing from (0,0) before first point placed in wire mode. Added check for `startPoint !== (0,0)` before rendering preview.
+
+2. **Delete/Duplicate modes not working**: ModeState discriminated union was missing 'delete' and 'duplicate' types. Added them to state.ts, getEditorMode(), and getModeStateForMode().
+
+3. **Duplicate not functioning**: handleDuplicateAt() was a stub. Implemented full duplication with deep copy, proper instance name incrementing, and pins from component definition.
+
+4. **Corrupted pin coordinates after move**: MOVE_COMPONENTS mutation was incorrectly updating pin positions. Pins are relative coordinates and should not change when component moves. Removed pin position updates from move logic.
+
+### Completion
+
+Round 2 refactoring complete. All modes functional: select, wire, delete, duplicate, move, probe. Component placement, rotation, mirroring working. No TypeScript errors.
