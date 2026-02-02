@@ -19,6 +19,15 @@
       "previewImage": "/previewImage/rc-lowpass.png"
     },
     {
+      "id": "rc-highpass",
+      "name": "RC High-Pass Filter",
+      "description": "High-pass filter with 159 Hz cutoff",
+      "category": "basic",
+      "schematicFile": "/examples/rc-highpass.json",
+      "netlistFile": null,
+      "previewImage": "/previewImage/rc-highpass.png"
+    },
+    {
       "id": "voltage-multiplier",
       "name": "Voltage Multiplier",
       "description": "6-stage Cockcroft-Walton multiplier",
