@@ -28,6 +28,15 @@
       "previewImage": "/previewImage/rc-highpass.png"
     },
     {
+      "id": "rlc-bandpass",
+      "name": "RLC Bandpass Filter",
+      "description": "Series RLC bandpass with 5 kHz resonance",
+      "category": "filters",
+      "schematicFile": "/examples/rlc-bandpass.json",
+      "netlistFile": null,
+      "previewImage": "/previewImage/rlc-bandpass.png"
+    },
+    {
       "id": "voltage-multiplier",
       "name": "Voltage Multiplier",
       "description": "6-stage Cockcroft-Walton multiplier",

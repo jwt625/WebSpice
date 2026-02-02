@@ -168,7 +168,7 @@ Preview images should be captured at a consistent zoom level showing the complet
 | Coupled LC Resonators | Done | Done | Done |
 | Voltage Divider | Done | TODO | Done |
 | RC High-Pass Filter | Done | TODO | Done |
-| RLC Bandpass Filter | TODO | TODO | TODO |
+| RLC Bandpass Filter | Done (fixed wiring) | TODO | Done |
 | Twin-T Notch Filter | TODO | TODO | TODO |
 | Half-Wave Rectifier | TODO | TODO | TODO |
 | Common Emitter Amplifier | TODO | TODO | TODO |
