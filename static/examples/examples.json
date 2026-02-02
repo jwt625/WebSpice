@@ -1,6 +1,15 @@
 {
   "examples": [
     {
+      "id": "voltage-divider",
+      "name": "Voltage Divider",
+      "description": "Basic voltage divider with two resistors",
+      "category": "basic",
+      "schematicFile": "/examples/voltage-divider.json",
+      "netlistFile": null,
+      "previewImage": "/previewImage/voltage-divider.png"
+    },
+    {
       "id": "minimal-rc",
       "name": "RC Low-Pass Filter",
       "description": "Simple RC circuit with pulse input",

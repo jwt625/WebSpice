@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "schematic": {
+    "components": [
+      {
+        "id": "vd-v1",
+        "type": "voltage",
+        "x": -100,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attributes": {
+          "InstName": "V1",
+          "Value": "SIN(0 10 1k)"
+        },
+        "pins": [
+          { "x": 0, "y": -40, "name": "+", "id": "0" },
+          { "x": 0, "y": 40, "name": "-", "id": "1" }
+        ]
+      },
+      {
+        "id": "vd-r1",
+        "type": "resistor",
+        "x": 0,
+        "y": -40,
+        "rotation": 0,
+        "mirror": false,
+        "attributes": {
+          "InstName": "R1",
+          "Value": "2k"
+        },
+        "pins": [
+          { "x": 0, "y": -30, "name": "1", "id": "0" },
+          { "x": 0, "y": 30, "name": "2", "id": "1" }
+        ]
+      },
+      {
+        "id": "vd-r2",
+        "type": "resistor",
+        "x": 0,
+        "y": 40,
+        "rotation": 0,
+        "mirror": false,
+        "attributes": {
+          "InstName": "R2",
+          "Value": "1k"
+        },
+        "pins": [
+          { "x": 0, "y": -30, "name": "1", "id": "0" },
+          { "x": 0, "y": 30, "name": "2", "id": "1" }
+        ]
+      },
+      {
+        "id": "vd-gnd",
+        "type": "ground",
+        "x": -100,
+        "y": 80,
+        "rotation": 0,
+        "mirror": false,
+        "attributes": {
+          "InstName": "",
+          "Value": ""
+        },
+        "pins": [
+          { "x": 0, "y": -10, "name": "0", "id": "0" }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "vd-w1",
+        "x1": -100,
+        "y1": -40,
+        "x2": -100,
+        "y2": -70
+      },
+      {
+        "id": "vd-w2",
+        "x1": -100,
+        "y1": -70,
+        "x2": 0,
+        "y2": -70
+      },
+      {
+        "id": "vd-w3",
+        "x1": 0,
+        "y1": -10,
+        "x2": 0,
+        "y2": 10
+      },
+      {
+        "id": "vd-w4",
+        "x1": 0,
+        "y1": 70,
+        "x2": 0,
+        "y2": 80
+      },
+      {
+        "id": "vd-w5",
+        "x1": 0,
+        "y1": 80,
+        "x2": -100,
+        "y2": 80
+      },
+      {
+        "id": "vd-w6",
+        "x1": -100,
+        "y1": 80,
+        "x2": -100,
+        "y2": 40
+      }
+    ],
+    "junctions": [
+      {
+        "id": "vd-j1",
+        "x": -100,
+        "y": 80
+      }
+    ],
+    "directives": [
+      {
+        "id": "vd-tran",
+        "type": "tran",
+        "text": ".tran 1u 5m",
+        "x": -150,
+        "y": -100
+      }
+    ],
+    "parameters": {},
+    "models": []
+  },
+  "netlist": "* Voltage Divider\n* Demonstrates Ohm's law and voltage division\n* Vout = Vin * R2/(R1+R2) = 10V * 1k/(2k+1k) = 3.33V peak\n\nV1 in 0 SIN(0 10 1k)\nR1 in out 2k\nR2 out 0 1k\n\n.tran 1u 5m\n.end",
+  "savedAt": "2026-02-02T00:00:00.000Z"
+}
+

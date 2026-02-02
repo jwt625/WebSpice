@@ -68,11 +68,11 @@ export const DEFAULT_VALUES: Record<string, string> = {
 	inductor: '1m',
 	voltage: 'DC 5',
 	current: 'DC 1m',
-	diode: 'D',
-	npn: 'NPN',
-	pnp: 'PNP',
-	nmos: 'NMOS',
-	pmos: 'PMOS',
+	diode: '1N4148',
+	npn: '2N2222',
+	pnp: '2N3906',
+	nmos: 'NMOS',  // No default model in library yet
+	pmos: 'PMOS',  // No default model in library yet
 };
 
 /** Pin order for SPICE netlist (component type -> pin names in order) */

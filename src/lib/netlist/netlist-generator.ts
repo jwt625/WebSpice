@@ -158,16 +158,15 @@ export function generateNetlist(schematic: Schematic, title: string = 'Untitled 
 		result.directives.push(`.param ${name}=${value}`);
 	}
 
-	// Collect model names referenced by components (e.g., diodes)
+	// Collect model names referenced by components (diodes, BJTs, MOSFETs)
 	const referencedModels = new Set<string>();
 	for (const comp of schematic.components) {
-		if (comp.type === 'diode') {
+		if (comp.type === 'diode' || comp.type === 'npn' || comp.type === 'pnp' || comp.type === 'nmos' || comp.type === 'pmos') {
 			const modelName = comp.attributes['Value'];
 			if (modelName) {
 				referencedModels.add(modelName);
 			}
 		}
-		// TODO: Add BJT, MOSFET, etc. when those component types are supported
 	}
 
 	// Track which models are already defined in schematic
