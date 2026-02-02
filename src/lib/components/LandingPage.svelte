@@ -135,8 +135,9 @@
 	.landing-page {
 		width: 100%;
 		height: 100%;
+		overflow-y: auto;
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		justify-content: center;
 		background: var(--bg-primary);
 		padding: 2rem;

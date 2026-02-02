@@ -81,7 +81,7 @@
       {
         "id": "rc-ac",
         "type": "ac",
-        "text": ".ac dec 20 10 10k",
+        "text": ".ac dec 1000 10 10k",
         "x": -200,
         "y": -120
       }
@@ -89,7 +89,7 @@
     "parameters": {},
     "models": []
   },
-  "netlist": "* RC Low-Pass Filter - AC Analysis\n* Cutoff frequency fc = 1/(2*pi*R*C) = 1/(2*pi*1k*1u) = 159 Hz\n* Frequency sweep from 10 Hz to 10 kHz (1 decade below to 2 decades above fc)\n\nVin in 0 AC 1\nR1 in out 1k\nC1 out 0 1u\n\n.ac dec 20 10 10k\n.end",
+  "netlist": "* RC Low-Pass Filter - AC Analysis\n* Cutoff frequency fc = 1/(2*pi*R*C) = 1/(2*pi*1k*1u) = 159 Hz\n* Frequency sweep from 10 Hz to 10 kHz (1000 points per decade)\n\nVin in 0 AC 1\nR1 in out 1k\nC1 out 0 1u\n\n.ac dec 1000 10 10k\n.end",
   "savedAt": "2026-02-02T00:00:00.000Z"
 }
 

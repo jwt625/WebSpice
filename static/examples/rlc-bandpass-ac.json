@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "schematic": {
+    "components": [
+      {
+        "id": "bp-r1",
+        "type": "resistor",
+        "x": 0,
+        "y": -80,
+        "rotation": 0,
+        "mirror": false,
+        "attributes": {
+          "InstName": "R1",
+          "Value": "100"
+        },
+        "pins": [
+          { "x": 0, "y": -30, "name": "1", "id": "0" },
+          { "x": 0, "y": 30, "name": "2", "id": "1" }
+        ]
+      },
+      {
+        "id": "bp-l1",
+        "type": "inductor",
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attributes": {
+          "InstName": "L1",
+          "Value": "10m"
+        },
+        "pins": [
+          { "x": 0, "y": -30, "name": "1", "id": "0" },
+          { "x": 0, "y": 30, "name": "2", "id": "1" }
+        ]
+      },
+      {
+        "id": "bp-c1",
+        "type": "capacitor",
+        "x": 0,
+        "y": 80,
+        "rotation": 0,
+        "mirror": false,
+        "attributes": {
+          "InstName": "C1",
+          "Value": "100n"
+        },
+        "pins": [
+          { "x": 0, "y": -30, "name": "1", "id": "0" },
+          { "x": 0, "y": 30, "name": "2", "id": "1" }
+        ]
+      },
+      {
+        "id": "bp-vin",
+        "type": "voltage",
+        "x": -120,
+        "y": 0,
+        "rotation": 0,
+        "mirror": false,
+        "attributes": {
+          "InstName": "Vin",
+          "Value": "AC 1"
+        },
+        "pins": [
+          { "x": 0, "y": -40, "name": "+", "id": "0" },
+          { "x": 0, "y": 40, "name": "-", "id": "1" }
+        ]
+      },
+      {
+        "id": "bp-gnd",
+        "type": "ground",
+        "x": -130,
+        "y": 70,
+        "rotation": 90,
+        "mirror": false,
+        "attributes": {
+          "InstName": "",
+          "Value": ""
+        },
+        "pins": [
+          { "x": 0, "y": -10, "name": "0", "id": "0" }
+        ]
+      }
+    ],
+    "wires": [
+      { "id": "bp-w1", "x1": -120, "y1": -40, "x2": -120, "y2": -110 },
+      { "id": "bp-w2", "x1": -120, "y1": -110, "x2": 0, "y2": -110 },
+      { "id": "bp-w3", "x1": 0, "y1": -50, "x2": 0, "y2": -30 },
+      { "id": "bp-w4", "x1": 0, "y1": 30, "x2": 0, "y2": 50 },
+      { "id": "bp-w5", "x1": 0, "y1": 110, "x2": 0, "y2": 140 },
+      { "id": "bp-w6", "x1": 0, "y1": 140, "x2": -120, "y2": 140 },
+      { "id": "bp-w7", "x1": -120, "y1": 140, "x2": -120, "y2": 70 },
+      { "id": "bp-w8", "x1": -120, "y1": 70, "x2": -120, "y2": 40 }
+    ],
+    "junctions": [
+      { "id": "bp-j1", "x": -120, "y": 70 }
+    ],
+    "directives": [
+      {
+        "id": "bp-ac",
+        "type": "ac",
+        "text": ".ac dec 1000 500 50k",
+        "x": -180,
+        "y": -140
+      }
+    ],
+    "parameters": {},
+    "models": []
+  },
+  "netlist": "* RLC Bandpass Filter (Series RLC) - AC Analysis\n* Resonant frequency f0 = 1/(2*pi*sqrt(L*C)) = 5.03 kHz\n* Q = (1/R)*sqrt(L/C) = 3.16, Bandwidth = 1.6 kHz\n* Frequency sweep from 500 Hz to 50 kHz (1000 points per decade)\n\nVin in 0 AC 1\nR1 in n1 100\nL1 n1 out 10m\nC1 out 0 100n\n\n.ac dec 1000 500 50k\n.end",
+  "savedAt": "2026-02-02T00:00:00.000Z"
+}
+

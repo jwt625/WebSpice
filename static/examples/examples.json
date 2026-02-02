@@ -47,12 +47,21 @@
     },
     {
       "id": "rlc-bandpass",
-      "name": "RLC Bandpass Filter",
-      "description": "Series RLC bandpass with 5 kHz resonance",
+      "name": "RLC Bandpass Filter (Transient)",
+      "description": "Series RLC bandpass with 5 kHz resonance - time domain",
       "category": "filters",
       "schematicFile": "/examples/rlc-bandpass.json",
       "netlistFile": null,
       "previewImage": "/previewImage/rlc-bandpass.png"
+    },
+    {
+      "id": "rlc-bandpass-ac",
+      "name": "RLC Bandpass Filter (AC)",
+      "description": "Series RLC bandpass - frequency response (Bode plot)",
+      "category": "filters",
+      "schematicFile": "/examples/rlc-bandpass-ac.json",
+      "netlistFile": null,
+      "previewImage": "/previewImage/rlc-bandpass-ac.png"
     },
     {
       "id": "voltage-multiplier",
