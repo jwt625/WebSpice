@@ -76,7 +76,7 @@ export type EditorAction =
 
 	// Probe actions
 	| { type: 'PROBE_START'; pos: Point; nodeName: string | null; componentId?: string }
-	| { type: 'PROBE_COMPLETE' }
+	| { type: 'PROBE_COMPLETE'; pos: Point; nodeName: string | null }
 
 	// Junction actions
 	| { type: 'CREATE_JUNCTION'; pos: Point };

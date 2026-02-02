@@ -483,21 +483,48 @@
 		}
 	}
 
-	/** Handle click in delete mode */
+	/** Handle click in delete mode - priority: junction > component > wire */
 	function handleDeleteClick(clickPos: Point) {
 		const junction = findJunctionAt(clickPos);
-		const comp = findComponentAt(clickPos);
-		const wire = findWireAt(clickPos);
+		if (junction) {
+			dispatch({
+				type: 'DELETE_AT',
+				target: {
+					componentIds: [],
+					wireIds: [],
+					junctionIds: [junction.id],
+					directiveIds: []
+				}
+			});
+			return;
+		}
 
-		dispatch({
-			type: 'DELETE_AT',
-			target: {
-				componentIds: comp ? [comp.id] : [],
-				wireIds: wire ? [wire.id] : [],
-				junctionIds: junction ? [junction.id] : [],
-				directiveIds: []
-			}
-		});
+		const comp = findComponentAt(clickPos);
+		if (comp) {
+			dispatch({
+				type: 'DELETE_AT',
+				target: {
+					componentIds: [comp.id],
+					wireIds: [],
+					junctionIds: [],
+					directiveIds: []
+				}
+			});
+			return;
+		}
+
+		const wire = findWireAt(clickPos);
+		if (wire) {
+			dispatch({
+				type: 'DELETE_AT',
+				target: {
+					componentIds: [],
+					wireIds: [wire.id],
+					junctionIds: [],
+					directiveIds: []
+				}
+			});
+		}
 	}
 
 	/** Handle click in duplicate mode */
@@ -598,7 +625,7 @@
 				// Single voltage probe
 				addProbe('voltage', modeState.firstNodeName);
 			}
-			dispatch({ type: 'PROBE_COMPLETE' });
+			dispatch({ type: 'PROBE_COMPLETE', pos: snapped, nodeName: secondNodeName });
 		} else if (modeState.type === 'probing' && modeState.targetComponentId) {
 			// Current probe on component
 			const comp = schematic.components.find(c => c.id === modeState.targetComponentId);
@@ -606,7 +633,7 @@
 				const instName = comp.attributes['InstName'] || comp.id;
 				addProbe('current', instName, comp.id);
 			}
-			dispatch({ type: 'PROBE_COMPLETE' });
+			dispatch({ type: 'PROBE_COMPLETE', pos: snapped, nodeName: null });
 		}
 
 		// End view dragging or moving
