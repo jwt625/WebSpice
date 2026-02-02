@@ -1,11 +1,40 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { ViewTransform, GridSettings, Point, Schematic, Component, ComponentType, Rotation, EditorMode, WireDrawState, Wire, Junction, ProbeType } from './types';
-	import { DEFAULT_VIEW, DEFAULT_GRID, DEFAULT_WIRE_DRAW, MODE_SHORTCUTS, getModeName } from './types';
-	import { renderComponent, hitTestComponent, nextRotation } from './component-renderer';
+	import type { Point, Schematic, Component, Wire, ProbeType } from './types';
+	import { getModeName, MODE_SHORTCUTS } from './types';
+	import type { ComponentType } from './types';
+	import { renderComponent } from './component-renderer';
 	import { COMPONENT_DEFS, getComponentByShortcut } from './component-defs';
-	import { COMPONENT_PREFIX } from '$lib/netlist/types';
-import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/connectivity';
+
+	import {
+		screenToSchematic as screenToSchematicUtil,
+		snapToGrid as snapToGridUtil,
+		getWireSegments,
+		isPointOnWireSegment,
+		findComponentAt as findComponentAtUtil,
+		findWireAt as findWireAtUtil,
+		findJunctionAt as findJunctionAtUtil,
+		findDirectiveAtPos as findDirectiveAtPosUtil,
+		drawVoltageProbe as drawVoltageProbeUtil,
+		drawCurrentClamp as drawCurrentClampUtil,
+		findNodeForWire as findNodeForWireUtil,
+		drawGrid as drawGridUtil,
+		drawOrigin as drawOriginUtil,
+		drawWires as drawWiresUtil,
+		drawJunctions as drawJunctionsUtil,
+		drawNodeLabels as drawNodeLabelsUtil,
+		drawDirectives as drawDirectivesUtil
+	} from './canvas';
+
+	import {
+		type EditorState,
+		type EditorAction,
+		type HitTestResult,
+		createInitialEditorState,
+		getEditorMode,
+		editorReducer,
+		applyMutations
+	} from './editor';
 
 	interface ProbeEvent {
 		type: ProbeType;
@@ -30,43 +59,11 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 	let canvas: HTMLCanvasElement;
 	let ctx: CanvasRenderingContext2D | null = null;
 
-	let view: ViewTransform = $state({ ...DEFAULT_VIEW });
-	let grid: GridSettings = $state({ ...DEFAULT_GRID });
-	let isDragging = $state(false);
-	let dragStart: Point | null = null;
-	let mousePos: Point = $state({ x: 0, y: 0 });
-	let schematicPos: Point = $state({ x: 0, y: 0 });
+	// Consolidated editor state
+	let editorState: EditorState = $state(createInitialEditorState());
 
-	// Editor mode (select, wire, delete, move, place)
-	let mode: EditorMode = $state('select');
-
-	// Selection state
-	let selectedIds: Set<string> = $state(new Set());
-	let selectedWireIds: Set<string> = $state(new Set());
-	let selectedDirectiveIds: Set<string> = $state(new Set());
-
-	// Move operation state
-	let isMoving = $state(false);
-	let moveStartSchematicPos: Point | null = null;
-
-	// Component placement state
-	let placingType: ComponentType | null = $state(null);
-	let placingRotation: Rotation = $state(0);
-	let placingMirror: boolean = $state(false);
-
-	// Wire drawing state
-	let wireDraw: WireDrawState = $state({ ...DEFAULT_WIRE_DRAW });
-
-	// Probe state for differential voltage measurement
-	let probeState = $state<{
-		isHolding: boolean;
-		firstNode: Point | null;
-		firstNodeName: string | null;
-		targetComponent?: Component | null;
-	}>({ isHolding: false, firstNode: null, firstNodeName: null, targetComponent: null });
-
-	// Component counter for generating unique IDs
-	let componentCounters: Record<string, number> = $state({});
+	// Drag tracking (screen coordinates, not part of editor state)
+	let lastScreenPos: Point | null = null;
 
 	const getDpr = () => (typeof window !== 'undefined' ? window.devicePixelRatio : 1) || 1;
 
@@ -105,8 +102,8 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 
 		// Adjust view offset to keep the center point stable
 		if (canvas.width > 0 && canvas.height > 0) {
-			view.offsetX += (newWidth - canvas.width) / 2;
-			view.offsetY += (newHeight - canvas.height) / 2;
+			editorState.view.offsetX += (newWidth - canvas.width) / 2;
+			editorState.view.offsetY += (newHeight - canvas.height) / 2;
 		}
 
 		canvas.width = newWidth;
@@ -115,36 +112,52 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		render();
 	}
 
-	// Convert screen coords to schematic coords
-	function screenToSchematic(sx: number, sy: number): Point {
-		const dpr = getDpr();
+	// Wrapper functions that use component state
+	const screenToSchematic = (sx: number, sy: number): Point =>
+		screenToSchematicUtil(sx, sy, editorState.view, getDpr());
+
+	const snapToGrid = (p: Point): Point =>
+		snapToGridUtil(p, editorState.grid.size, editorState.grid.snapEnabled);
+
+	// Hit testing wrapper functions
+	const findComponentAt = (pos: Point): Component | null =>
+		findComponentAtUtil(pos, schematic.components);
+
+	const findWireAt = (pos: Point, tolerance: number = 5): Wire | null =>
+		findWireAtUtil(pos, schematic.wires, tolerance);
+
+	const findJunctionAt = (pos: Point, tolerance: number = 8): import('./types').Junction | null =>
+		findJunctionAtUtil(pos, schematic.junctions, tolerance);
+
+	const findDirectiveAtPos = (pos: Point): import('./types').SpiceDirective | null => {
+		if (!ctx) return null;
+		return findDirectiveAtPosUtil(pos, schematic.directives, { ctx, viewScale: editorState.view.scale });
+	};
+
+	// Perform hit test at position
+	function performHitTest(pos: Point): HitTestResult {
 		return {
-			x: (sx * dpr - view.offsetX) / view.scale,
-			y: (sy * dpr - view.offsetY) / view.scale
+			component: findComponentAt(pos) ?? undefined,
+			wire: findWireAt(pos) ?? undefined,
+			junction: findJunctionAt(pos) ?? undefined,
+			directive: findDirectiveAtPos(pos) ?? undefined
 		};
 	}
 
-	// Convert schematic coords to screen coords
-	function schematicToScreen(px: number, py: number): Point {
-		const dpr = getDpr();
-		return {
-			x: (px * view.scale + view.offsetX) / dpr,
-			y: (py * view.scale + view.offsetY) / dpr
-		};
-	}
-
-	// Snap to grid
-	function snapToGrid(p: Point): Point {
-		if (!grid.snapEnabled) return p;
-		return {
-			x: Math.round(p.x / grid.size) * grid.size,
-			y: Math.round(p.y / grid.size) * grid.size
-		};
+	// Dispatch an action through the reducer
+	function dispatch(action: EditorAction): void {
+		const result = editorReducer(editorState, action, schematic);
+		editorState = result.state;
+		if (result.mutations.length > 0) {
+			applyMutations(schematic, result.mutations);
+		}
+		render();
 	}
 
 	function render() {
 		if (!ctx || !canvas) return;
 		const w = canvas.width, h = canvas.height;
+		const { view, grid, selection, modeState, schematicPos } = editorState;
 
 		// Clear
 		ctx.fillStyle = '#1a1a1a';
@@ -156,459 +169,217 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		ctx.scale(view.scale, view.scale);
 
 		// Draw grid
-		if (grid.visible) drawGrid(w, h);
+		if (grid.visible) drawGridLocal(w, h, view, grid.size);
 
 		// Draw origin crosshair
-		drawOrigin();
+		drawOriginLocal(view.scale);
 
 		// Draw wires
-		drawWires();
+		drawWiresLocal(view.scale, modeState, schematicPos, selection.wireIds);
 
 		// Draw components
-		drawComponents();
+		drawComponentsLocal(view.scale, modeState, schematicPos, selection.componentIds);
 
 		// Draw node labels (if available)
-		drawNodeLabels();
+		drawNodeLabelsLocal(view.scale);
 
 		// Draw SPICE directives
-		drawDirectives();
+		drawDirectivesLocal(view.scale, selection.directiveIds);
 
 		// Draw probe cursor overlay in probe mode
-		if (mode === 'probe') {
-			drawProbeCursor();
+		if (modeState.type === 'probing') {
+			drawProbeCursorLocal(view.scale, modeState, schematicPos);
 		}
 
 		ctx.restore();
 	}
 
-	function drawGrid(w: number, h: number) {
+	// Drawing functions using local parameters
+	function drawGridLocal(w: number, h: number, view: import('./types').ViewTransform, gridSize: number) {
 		if (!ctx) return;
-		const gs = grid.size;
-
-		// Calculate visible range in schematic coords
-		const topLeft = screenToSchematic(0, 0);
-		const bottomRight = { x: (w - view.offsetX) / view.scale, y: (h - view.offsetY) / view.scale };
-
-		const startX = Math.floor(topLeft.x / gs) * gs;
-		const startY = Math.floor(topLeft.y / gs) * gs;
-		const endX = Math.ceil(bottomRight.x / gs) * gs;
-		const endY = Math.ceil(bottomRight.y / gs) * gs;
-
-		// Draw dots at grid intersections
-		ctx.fillStyle = '#444';
-		const dotSize = Math.max(1, 2 / view.scale);
-
-		for (let x = startX; x <= endX; x += gs) {
-			for (let y = startY; y <= endY; y += gs) {
-				ctx.fillRect(x - dotSize/2, y - dotSize/2, dotSize, dotSize);
-			}
-		}
-	}
-
-	function drawOrigin() {
-		if (!ctx) return;
-		const size = 20;
-		ctx.strokeStyle = '#666';
-		ctx.lineWidth = 1 / view.scale;
-		ctx.beginPath();
-		ctx.moveTo(-size, 0); ctx.lineTo(size, 0);
-		ctx.moveTo(0, -size); ctx.lineTo(0, size);
-		ctx.stroke();
-	}
-
-	function drawWires() {
-		if (!ctx) return;
-		ctx.lineCap = 'round';
-		ctx.lineWidth = 2 / view.scale;
-
-		// Draw existing wires
-		for (const wire of schematic.wires) {
-			const isSelected = selectedWireIds.has(wire.id);
-			ctx.strokeStyle = isSelected ? '#ffff00' : '#00ff00';
-			ctx.beginPath();
-			ctx.moveTo(wire.x1, wire.y1);
-			ctx.lineTo(wire.x2, wire.y2);
-			ctx.stroke();
-		}
-
-		// Draw wire being drawn (preview)
-		if (wireDraw.isDrawing && wireDraw.startPoint) {
-			const snapped = snapToGrid(schematicPos);
-			const segments = getWireSegments(wireDraw.startPoint, snapped, wireDraw.direction);
-
-			ctx.strokeStyle = '#00ff0080';  // Semi-transparent green
-			ctx.setLineDash([5 / view.scale, 5 / view.scale]);
-
-			for (const seg of segments) {
-				ctx.beginPath();
-				ctx.moveTo(seg.x1, seg.y1);
-				ctx.lineTo(seg.x2, seg.y2);
-				ctx.stroke();
-			}
-
-			ctx.setLineDash([]);
-		}
-
-		// Draw junction dots where wires connect
-		drawJunctions();
-	}
-
-	/** Get Manhattan-style wire segments from start to end */
-	function getWireSegments(start: Point, end: Point, direction: 'horizontal-first' | 'vertical-first'): { x1: number; y1: number; x2: number; y2: number }[] {
-		const segments: { x1: number; y1: number; x2: number; y2: number }[] = [];
-
-		if (start.x === end.x && start.y === end.y) {
-			return segments;  // No wire needed
-		}
-
-		if (start.x === end.x || start.y === end.y) {
-			// Straight line
-			segments.push({ x1: start.x, y1: start.y, x2: end.x, y2: end.y });
-		} else if (direction === 'horizontal-first') {
-			// Horizontal then vertical
-			segments.push({ x1: start.x, y1: start.y, x2: end.x, y2: start.y });
-			segments.push({ x1: end.x, y1: start.y, x2: end.x, y2: end.y });
-		} else {
-			// Vertical then horizontal
-			segments.push({ x1: start.x, y1: start.y, x2: start.x, y2: end.y });
-			segments.push({ x1: start.x, y1: end.y, x2: end.x, y2: end.y });
-		}
-
-		return segments;
-	}
-
-	/** Get world-space pin positions for a component */
-	function getComponentPinPositions(comp: Component): Point[] {
-		const def = COMPONENT_DEFS[comp.type];
-		if (!def) return [];
-
-		const rad = (comp.rotation * Math.PI) / 180;
-		const cos = Math.cos(rad);
-		const sin = Math.sin(rad);
-
-		return def.pins.map(pin => {
-			// Apply mirror
-			let px = comp.mirror ? -pin.x : pin.x;
-			let py = pin.y;
-			// Apply rotation
-			const rx = px * cos - py * sin;
-			const ry = px * sin + py * cos;
-			// Translate to world position
-			return { x: comp.x + rx, y: comp.y + ry };
+		drawGridUtil({
+			ctx,
+			view,
+			gridSize,
+			width: w,
+			height: h,
+			screenToSchematic
 		});
 	}
 
-	/** Get all component pin positions in the schematic */
-	function getAllPinPositions(): Set<string> {
-		const pins = new Set<string>();
-		for (const comp of schematic.components) {
-			for (const pos of getComponentPinPositions(comp)) {
-				pins.add(`${pos.x},${pos.y}`);
-			}
-		}
-		return pins;
-	}
-
-	/** Draw junction dots - red for connections, following LTSpice style */
-	function drawJunctions() {
+	function drawOriginLocal(scale: number) {
 		if (!ctx) return;
-
-		const dotRadius = 4 / view.scale;
-		const pinPositions = getAllPinPositions();
-
-		// Count wire endpoints at each position
-		const wireEndpoints: Map<string, number> = new Map();
-		for (const wire of schematic.wires) {
-			const key1 = `${wire.x1},${wire.y1}`;
-			const key2 = `${wire.x2},${wire.y2}`;
-			wireEndpoints.set(key1, (wireEndpoints.get(key1) || 0) + 1);
-			wireEndpoints.set(key2, (wireEndpoints.get(key2) || 0) + 1);
-		}
-
-		// Draw red dots at:
-		// 1. Explicit junctions (user-created for wire crossings)
-		// 2. Wire endpoints that connect to component pins
-		// 3. Wire endpoints where 3+ wire segments meet (T-junction)
-
-		ctx.fillStyle = '#ff0000';  // Red like component terminals
-
-		// Draw explicit junctions
-		for (const junction of schematic.junctions) {
-			ctx.beginPath();
-			ctx.arc(junction.x, junction.y, dotRadius, 0, Math.PI * 2);
-			ctx.fill();
-		}
-
-		// Draw connection dots at wire endpoints
-		for (const [key, count] of wireEndpoints) {
-			const [x, y] = key.split(',').map(Number);
-
-			// Draw dot if:
-			// - Wire endpoint is on a component pin (auto-connection)
-			// - 3+ wire endpoints meet here (T-junction or more)
-			if (pinPositions.has(key) || count >= 3) {
-				ctx.beginPath();
-				ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
-				ctx.fill();
-			}
-		}
+		drawOriginUtil(ctx, scale);
 	}
 
-	function drawComponents() {
+	function drawWiresLocal(
+		scale: number,
+		modeState: import('./editor').ModeState,
+		schematicPos: Point,
+		selectedWireIds: Set<string>
+	) {
+		if (!ctx) return;
+		const snapped = snapToGrid(schematicPos);
+		const isDrawingWire = modeState.type === 'drawing-wire';
+		const startPoint = isDrawingWire ? modeState.startPoint : null;
+		const direction = isDrawingWire ? modeState.direction : 'horizontal-first';
+		// Only show preview if first point has been placed (not at origin)
+		const hasStartPoint = startPoint !== null && (startPoint.x !== 0 || startPoint.y !== 0);
+		const previewSegments = hasStartPoint
+			? getWireSegments(startPoint, snapped, direction)
+			: [];
+
+		drawWiresUtil({
+			ctx,
+			viewScale: scale,
+			wires: schematic.wires,
+			selectedWireIds,
+			isDrawing: isDrawingWire && hasStartPoint,
+			startPoint: hasStartPoint ? startPoint : null,
+			previewSegments
+		});
+
+		// Draw junction dots where wires connect
+		drawJunctionsLocal(scale);
+	}
+
+	function drawJunctionsLocal(scale: number) {
+		if (!ctx) return;
+		drawJunctionsUtil({
+			ctx,
+			viewScale: scale,
+			junctions: schematic.junctions,
+			wires: schematic.wires,
+			components: schematic.components
+		});
+	}
+
+	function drawComponentsLocal(
+		scale: number,
+		modeState: import('./editor').ModeState,
+		schematicPos: Point,
+		selectedIds: Set<string>
+	) {
 		if (!ctx) return;
 
 		// Draw all placed components
 		for (const comp of schematic.components) {
 			const isSelected = selectedIds.has(comp.id);
-			renderComponent(ctx, comp, view.scale, isSelected, false);
+			renderComponent(ctx, comp, scale, isSelected, false);
 		}
 
 		// Draw ghost component if placing
-		if (placingType) {
+		if (modeState.type === 'placing') {
 			const snapped = snapToGrid(schematicPos);
 			const ghostComp: Component = {
 				id: 'ghost',
-				type: placingType,
+				type: modeState.componentType,
 				x: snapped.x,
 				y: snapped.y,
-				rotation: placingRotation,
-				mirror: placingMirror,
+				rotation: modeState.rotation,
+				mirror: modeState.mirror,
 				attributes: {},
 				pins: []
 			};
-			renderComponent(ctx, ghostComp, view.scale, false, true);
+			renderComponent(ctx, ghostComp, scale, false, true);
 		}
 	}
 
-	function drawNodeLabels() {
-		if (!ctx || !schematic.nodeLabels || schematic.nodeLabels.length === 0) return;
-
-		const fontSize = Math.max(10, 12 / view.scale);
-		ctx.font = `${fontSize}px monospace`;
-		ctx.textAlign = 'left';
-		ctx.textBaseline = 'bottom';
-
-		for (const label of schematic.nodeLabels) {
-			// Draw background
-			const text = label.name;
-			const metrics = ctx.measureText(text);
-			const padding = 2 / view.scale;
-			const bgWidth = metrics.width + padding * 2;
-			const bgHeight = fontSize + padding * 2;
-
-			ctx.fillStyle = label.isGround ? '#004400' : '#000044';
-			ctx.fillRect(label.x + 3, label.y - bgHeight - 2, bgWidth, bgHeight);
-
-			// Draw text
-			ctx.fillStyle = label.isGround ? '#00ff00' : '#88ccff';
-			ctx.fillText(text, label.x + 3 + padding, label.y - 2 - padding);
-		}
-	}
-
-	/** Draw SPICE directives as text on the canvas */
-	function drawDirectives() {
-		if (!ctx || !schematic.directives || schematic.directives.length === 0) return;
-
-		const fontSize = Math.max(10, 14 / view.scale);
-		ctx.font = `${fontSize}px monospace`;
-		ctx.textAlign = 'left';
-		ctx.textBaseline = 'top';
-
-		for (const directive of schematic.directives) {
-			// Only draw directives that have position
-			if (directive.x === undefined || directive.y === undefined) continue;
-
-			const isSelected = selectedDirectiveIds.has(directive.id);
-			const text = directive.text;
-			const metrics = ctx.measureText(text);
-			const padding = 3 / view.scale;
-			const bgWidth = metrics.width + padding * 2;
-			const bgHeight = fontSize + padding * 2;
-
-			// Draw background - dark purple for directives, yellow tint if selected
-			ctx.fillStyle = isSelected ? '#3a3a1a' : '#2a1a3a';
-			ctx.fillRect(directive.x - padding, directive.y - padding, bgWidth, bgHeight);
-
-			// Draw border - yellow if selected
-			ctx.strokeStyle = isSelected ? '#ffff00' : '#6a4a8a';
-			ctx.lineWidth = (isSelected ? 2 : 1) / view.scale;
-			ctx.strokeRect(directive.x - padding, directive.y - padding, bgWidth, bgHeight);
-
-			// Draw text - light purple/magenta for SPICE directives
-			ctx.fillStyle = isSelected ? '#ffff88' : '#cc88ff';
-			ctx.fillText(text, directive.x, directive.y);
-		}
-	}
-
-	/** Find directive at a given position - returns the directive or null */
-	function findDirectiveAtPos(pos: Point): import('./types').SpiceDirective | null {
-		if (!ctx || !schematic.directives || schematic.directives.length === 0) return null;
-
-		const fontSize = Math.max(10, 14 / view.scale);
-		ctx.font = `${fontSize}px monospace`;
-
-		for (const directive of schematic.directives) {
-			if (directive.x === undefined || directive.y === undefined) continue;
-
-			const text = directive.text;
-			const metrics = ctx.measureText(text);
-			const padding = 3 / view.scale;
-			const bgWidth = metrics.width + padding * 2;
-			const bgHeight = fontSize + padding * 2;
-
-			// Check if click is within directive bounds
-			if (pos.x >= directive.x - padding && pos.x <= directive.x - padding + bgWidth &&
-				pos.y >= directive.y - padding && pos.y <= directive.y - padding + bgHeight) {
-				return directive;
-			}
-		}
-		return null;
-	}
-
-	/** Draw a voltage probe shape (pointed tip like multimeter probe) */
-	function drawVoltageProbe(x: number, y: number, color: string, label: string) {
+	function drawNodeLabelsLocal(scale: number) {
 		if (!ctx) return;
-		const s = 1 / view.scale;  // Scale factor
-
-		// Probe tip pointing down-left (toward the circuit point)
-		ctx.save();
-		ctx.translate(x, y);
-
-		// Pointed tip
-		ctx.fillStyle = color;
-		ctx.beginPath();
-		ctx.moveTo(0, 0);  // Tip
-		ctx.lineTo(4 * s, -8 * s);
-		ctx.lineTo(8 * s, -8 * s);
-		ctx.lineTo(8 * s, -28 * s);
-		ctx.lineTo(4 * s, -28 * s);
-		ctx.lineTo(4 * s, -8 * s);
-		ctx.closePath();
-		ctx.fill();
-
-		// Handle
-		ctx.fillStyle = '#333333';
-		ctx.fillRect(3 * s, -40 * s, 6 * s, 14 * s);
-
-		// Label (+/-)
-		ctx.fillStyle = '#ffffff';
-		ctx.font = `bold ${10 * s}px sans-serif`;
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.fillText(label, 6 * s, -18 * s);
-
-		ctx.restore();
+		drawNodeLabelsUtil(ctx, scale, schematic.nodeLabels);
 	}
 
-	/** Draw a current clamp/transformer shape */
-	function drawCurrentClamp(x: number, y: number) {
+	function drawDirectivesLocal(scale: number, selectedDirectiveIds: Set<string>) {
 		if (!ctx) return;
-		const s = 1 / view.scale;
-
-		ctx.save();
-		ctx.translate(x, y);
-
-		// Clamp jaws (open loop shape)
-		ctx.strokeStyle = '#ff8800';
-		ctx.lineWidth = 3 * s;
-		ctx.beginPath();
-		// Left jaw
-		ctx.arc(0, -15 * s, 12 * s, 0.3 * Math.PI, 0.9 * Math.PI);
-		ctx.stroke();
-		ctx.beginPath();
-		// Right jaw
-		ctx.arc(0, -15 * s, 12 * s, 0.1 * Math.PI, -0.1 * Math.PI, true);
-		ctx.lineTo(6 * s, -15 * s);
-		ctx.stroke();
-
-		// Handle
-		ctx.fillStyle = '#ff8800';
-		ctx.fillRect(-4 * s, -30 * s, 8 * s, 8 * s);
-		ctx.fillStyle = '#333333';
-		ctx.fillRect(-3 * s, -45 * s, 6 * s, 16 * s);
-
-		// "I" label
-		ctx.fillStyle = '#ffffff';
-		ctx.font = `bold ${8 * s}px sans-serif`;
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.fillText('I', 0, -26 * s);
-
-		ctx.restore();
+		drawDirectivesUtil(ctx, scale, schematic.directives, selectedDirectiveIds);
 	}
 
-	function drawProbeCursor() {
+	// Wrapper functions for probe drawing
+	const drawVoltageProbeLocal = (x: number, y: number, color: string, label: string, scale: number): void => {
 		if (!ctx) return;
-		const pos = schematicPos;  // Use actual cursor position, not snapped
+		drawVoltageProbeUtil(ctx, x, y, color, label, scale);
+	};
+
+	const drawCurrentClampLocal = (x: number, y: number, scale: number): void => {
+		if (!ctx) return;
+		drawCurrentClampUtil(ctx, x, y, scale);
+	};
+
+	function drawProbeCursorLocal(
+		scale: number,
+		modeState: import('./editor').ModeState,
+		schematicPos: Point
+	) {
+		if (!ctx || modeState.type !== 'probing') return;
+		const pos = schematicPos;
 
 		// Check what's under cursor
 		const compUnder = findComponentAt(pos);
 		const wireUnder = findWireAt(pos);
 
 		// If holding for differential probe
-		if (probeState.isHolding && probeState.firstNode) {
+		if (modeState.phase === 'holding-first' && modeState.firstNode) {
 			// Draw RED (+) probe fixed at first node (positive reference)
-			drawVoltageProbe(probeState.firstNode.x, probeState.firstNode.y, '#ff0000', '+');
+			drawVoltageProbeLocal(modeState.firstNode.x, modeState.firstNode.y, '#ff0000', '+', scale);
 
 			// Draw dashed line between probes
 			ctx.strokeStyle = '#888888';
-			ctx.lineWidth = 1 / view.scale;
-			ctx.setLineDash([4 / view.scale, 4 / view.scale]);
+			ctx.lineWidth = 1 / scale;
+			ctx.setLineDash([4 / scale, 4 / scale]);
 			ctx.beginPath();
-			ctx.moveTo(probeState.firstNode.x, probeState.firstNode.y);
+			ctx.moveTo(modeState.firstNode.x, modeState.firstNode.y);
 			ctx.lineTo(pos.x, pos.y);
 			ctx.stroke();
 			ctx.setLineDash([]);
 
 			// Draw BLACK (-) probe at cursor (negative reference)
-			drawVoltageProbe(pos.x, pos.y, '#000000', '-');
+			drawVoltageProbeLocal(pos.x, pos.y, '#000000', '-', scale);
 		} else if (compUnder && compUnder.type !== 'ground') {
 			// Current probe - draw clamp at cursor
-			drawCurrentClamp(pos.x, pos.y);
+			drawCurrentClampLocal(pos.x, pos.y, scale);
 		} else if (wireUnder) {
 			// Voltage probe - draw red probe at cursor
-			drawVoltageProbe(pos.x, pos.y, '#ff0000', '+');
+			drawVoltageProbeLocal(pos.x, pos.y, '#ff0000', '+', scale);
 		} else {
 			// Default - show faded probe at cursor
 			ctx.globalAlpha = 0.4;
-			drawVoltageProbe(pos.x, pos.y, '#888888', '?');
+			drawVoltageProbeLocal(pos.x, pos.y, '#888888', '?', scale);
 			ctx.globalAlpha = 1.0;
 		}
 	}
 
 	function getHudText(): string {
+		const { view, modeState, schematicPos, selection } = editorState;
 		const snapped = snapToGrid(schematicPos);
 		let text = `(${snapped.x}, ${snapped.y}) | Zoom: ${(view.scale * 100).toFixed(0)}%`;
 
 		// Show current mode
-		text += ` | ${getModeName(mode)}`;
+		const mode = getEditorMode(modeState);
+		text += ` | ${getModeName(mode as import('./types').EditorMode)}`;
 
-		if (mode === 'place' && placingType) {
-			const def = COMPONENT_DEFS[placingType];
+		if (modeState.type === 'placing') {
+			const def = COMPONENT_DEFS[modeState.componentType];
 			text += `: ${def.name}`;
-			if (placingRotation !== 0) text += ` R${placingRotation}°`;
-			if (placingMirror) text += ' M';
+			if (modeState.rotation !== 0) text += ` R${modeState.rotation}`;
+			if (modeState.mirror) text += ' M';
 			text += ' | Ctrl+R=rotate, Ctrl+E=mirror, Esc=cancel';
-		} else if (mode === 'wire') {
-			if (wireDraw.isDrawing) {
-				text += ' | Click to place segment, Space=toggle direction, Esc=cancel';
-			} else {
-				text += ' | Click to start wire, Esc=exit';
-			}
+		} else if (modeState.type === 'drawing-wire') {
+			text += ' | Click to place segment, Space=toggle direction, Esc=cancel';
 		} else if (mode === 'delete') {
 			text += ' | Click to delete (junctions/components/wires), Esc=exit';
 		} else if (mode === 'duplicate') {
 			text += ' | Click on item to duplicate, Esc=exit';
-		} else if (mode === 'move') {
+		} else if (modeState.type === 'moving') {
 			text += ' | Drag to move, Esc=exit';
-		} else if (mode === 'probe') {
-			if (probeState.isHolding) {
+		} else if (modeState.type === 'probing') {
+			if (modeState.phase === 'holding-first') {
 				text += ' | Release to measure V(+) - V(-), Esc=cancel';
 			} else {
 				text += ' | Click wire=V probe, Click component=I probe, Hold+drag=V diff';
 			}
-		} else if (selectedIds.size > 0 || selectedWireIds.size > 0 || selectedDirectiveIds.size > 0) {
-			const total = selectedIds.size + selectedWireIds.size + selectedDirectiveIds.size;
+		} else if (selection.componentIds.size > 0 || selection.wireIds.size > 0 || selection.directiveIds.size > 0) {
+			const total = selection.componentIds.size + selection.wireIds.size + selection.directiveIds.size;
 			text += ` | Selected: ${total}`;
 			text += ' | Ctrl+R=rotate, Ctrl+E=mirror, Del=delete';
 		}
@@ -623,412 +394,149 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		canvas.focus();
 		const clickPos = screenToSchematic(e.offsetX, e.offsetY);
 		const snapped = snapToGrid(clickPos);
+		const hitTest = performHitTest(clickPos);
+		const { modeState, selection } = editorState;
 
-		if (e.button === 0) {  // Left click
+		lastScreenPos = { x: e.offsetX, y: e.offsetY };
+
+		if (e.button === 0) { // Left click
 			// Handle wire mode
-			if (mode === 'wire') {
-				handleWireClick(snapped);
+			if (modeState.type === 'drawing-wire') {
+				if (modeState.startPoint.x === 0 && modeState.startPoint.y === 0) {
+					// Check if starting on existing wire - create junction
+					maybeCreateJunctionOnWire(snapped);
+					dispatch({ type: 'START_WIRE', point: snapped });
+				} else {
+					dispatch({ type: 'COMMIT_WIRE_SEGMENT', endPoint: snapped });
+					maybeCreateJunctionOnWire(snapped);
+				}
 				return;
 			}
 
-			// Handle delete mode
-			if (mode === 'delete') {
+			// Handle delete mode (idle with delete intent set via keyboard)
+			if (getEditorMode(modeState) === 'delete') {
 				handleDeleteClick(clickPos);
 				return;
 			}
 
 			// Handle duplicate mode
-			if (mode === 'duplicate') {
-				handleDuplicateClick(clickPos, snapped);
+			if (getEditorMode(modeState) === 'duplicate') {
+				handleDuplicateClick(clickPos);
 				return;
 			}
 
-			// Handle probe mode - start differential probe on mousedown
-			if (mode === 'probe') {
-				handleProbeMouseDown(clickPos, snapped);
-				// Don't return - let mouseup handle the actual probe action
+			// Handle probe mode
+			if (modeState.type === 'probing') {
+				const nodeName = getNodeAtPosition(snapped);
+				if (hitTest.component && hitTest.component.type !== 'ground') {
+					dispatch({ type: 'PROBE_START', pos: snapped, nodeName, componentId: hitTest.component.id });
+				} else if (hitTest.wire) {
+					dispatch({ type: 'PROBE_START', pos: snapped, nodeName });
+				}
+				return;
 			}
 
 			// Handle component placement
-			if (mode === 'place' && placingType) {
-				placeComponent();
+			if (modeState.type === 'placing') {
+				dispatch({ type: 'PLACE_COMPONENT' });
 				return;
 			}
 
-			// Check what's under the click
-			const clickedComp = findComponentAt(clickPos);
-			const clickedWire = findWireAt(clickPos);
-			const clickedDirective = findDirectiveAtPos(clickPos);
-
-			// Handle move mode - select and start moving
-			if (mode === 'move') {
-				if (clickedDirective) {
-					// Select directive and start moving
-					if (!selectedDirectiveIds.has(clickedDirective.id)) {
-						if (!e.shiftKey) {
-							selectedIds = new Set();
-							selectedWireIds = new Set();
-							selectedDirectiveIds = new Set([clickedDirective.id]);
-						} else {
-							selectedDirectiveIds.add(clickedDirective.id);
-							selectedDirectiveIds = new Set(selectedDirectiveIds);
-						}
-					}
-					isMoving = true;
-					moveStartSchematicPos = snapped;
-					dragStart = { x: e.offsetX, y: e.offsetY };
-					render();
-					return;
+			// Handle move mode
+			if (modeState.type === 'moving') {
+				if (hitTest.directive && !selection.directiveIds.has(hitTest.directive.id)) {
+					dispatch({ type: 'SELECT', target: { directiveId: hitTest.directive.id }, additive: e.shiftKey });
+				} else if (hitTest.component && !selection.componentIds.has(hitTest.component.id)) {
+					dispatch({ type: 'SELECT', target: { componentId: hitTest.component.id }, additive: e.shiftKey });
+				} else if (hitTest.wire && !selection.wireIds.has(hitTest.wire.id)) {
+					dispatch({ type: 'SELECT', target: { wireId: hitTest.wire.id }, additive: e.shiftKey });
 				}
-				if (clickedComp) {
-					// Select component and start moving
-					if (!selectedIds.has(clickedComp.id)) {
-						if (!e.shiftKey) {
-							selectedIds = new Set([clickedComp.id]);
-							selectedWireIds = new Set();
-							selectedDirectiveIds = new Set();
-						} else {
-							selectedIds.add(clickedComp.id);
-							selectedIds = new Set(selectedIds);
-						}
-					}
-					isMoving = true;
-					moveStartSchematicPos = snapped;
-					dragStart = { x: e.offsetX, y: e.offsetY };
-					render();
-					return;
-				}
-				if (clickedWire) {
-					// Select wire and start moving
-					if (!selectedWireIds.has(clickedWire.id)) {
-						if (!e.shiftKey) {
-							selectedWireIds = new Set([clickedWire.id]);
-							selectedIds = new Set();
-							selectedDirectiveIds = new Set();
-						} else {
-							selectedWireIds.add(clickedWire.id);
-							selectedWireIds = new Set(selectedWireIds);
-						}
-					}
-					isMoving = true;
-					moveStartSchematicPos = snapped;
-					dragStart = { x: e.offsetX, y: e.offsetY };
-					render();
-					return;
-				}
-				// Click on empty space in move mode - just prepare for pan
-				dragStart = { x: e.offsetX, y: e.offsetY };
-				render();
+				dispatch({ type: 'START_MOVE', startPos: snapped });
 				return;
 			}
 
-			// Select mode - check for component/wire/directive selection
-			if (clickedDirective) {
-				if (e.shiftKey) {
-					if (selectedDirectiveIds.has(clickedDirective.id)) {
-						selectedDirectiveIds.delete(clickedDirective.id);
-					} else {
-						selectedDirectiveIds.add(clickedDirective.id);
-					}
-					selectedDirectiveIds = new Set(selectedDirectiveIds);
-				} else {
-					selectedDirectiveIds = new Set([clickedDirective.id]);
-					selectedIds = new Set();
-					selectedWireIds = new Set();
-				}
-				render();
-				return;
+			// Select mode - check for selection
+			if (hitTest.directive) {
+				dispatch({ type: 'SELECT', target: { directiveId: hitTest.directive.id }, additive: e.shiftKey });
+			} else if (hitTest.component) {
+				dispatch({ type: 'SELECT', target: { componentId: hitTest.component.id }, additive: e.shiftKey });
+			} else if (hitTest.wire) {
+				dispatch({ type: 'SELECT', target: { wireId: hitTest.wire.id }, additive: e.shiftKey });
+			} else if (!e.shiftKey) {
+				dispatch({ type: 'CLEAR_SELECTION' });
 			}
 
-			if (clickedComp) {
-				if (e.shiftKey) {
-					// Toggle selection
-					if (selectedIds.has(clickedComp.id)) {
-						selectedIds.delete(clickedComp.id);
-					} else {
-						selectedIds.add(clickedComp.id);
-					}
-					selectedIds = new Set(selectedIds);
-				} else {
-					selectedIds = new Set([clickedComp.id]);
-					selectedWireIds = new Set();
-					selectedDirectiveIds = new Set();
-				}
-				render();
-				return;
-			}
-
-			if (clickedWire) {
-				if (e.shiftKey) {
-					if (selectedWireIds.has(clickedWire.id)) {
-						selectedWireIds.delete(clickedWire.id);
-					} else {
-						selectedWireIds.add(clickedWire.id);
-					}
-					selectedWireIds = new Set(selectedWireIds);
-				} else {
-					selectedWireIds = new Set([clickedWire.id]);
-					selectedIds = new Set();
-					selectedDirectiveIds = new Set();
-				}
-				render();
-				return;
-			}
-
-			// Click on empty space - prepare for potential pan, clear selection
-			if (!e.shiftKey) {
-				selectedIds = new Set();
-				selectedWireIds = new Set();
-				selectedDirectiveIds = new Set();
-			}
-			dragStart = { x: e.offsetX, y: e.offsetY };
-			render();
-		} else if (e.button === 1) {  // Middle click - always pan
-			isDragging = true;
-			dragStart = { x: e.offsetX, y: e.offsetY };
+			// Prepare for potential view drag
+			dispatch({ type: 'START_VIEW_DRAG', screenPos: { x: e.offsetX, y: e.offsetY } });
+		} else if (e.button === 1) { // Middle click - always pan
+			dispatch({ type: 'START_VIEW_DRAG', screenPos: { x: e.offsetX, y: e.offsetY } });
 		}
-	}
-
-	/** Handle click in wire drawing mode */
-	function handleWireClick(snapped: Point) {
-		if (!wireDraw.isDrawing) {
-			// Start new wire - also check if starting on existing wire
-			maybeCreateJunctionOnWire(snapped);
-			wireDraw = {
-				...wireDraw,
-				isDrawing: true,
-				startPoint: snapped,
-				segments: []
-			};
-		} else if (wireDraw.startPoint) {
-			// Place wire segment(s)
-			const segments = getWireSegments(wireDraw.startPoint, snapped, wireDraw.direction);
-
-			for (const seg of segments) {
-				// Only add non-zero-length segments
-				if (seg.x1 !== seg.x2 || seg.y1 !== seg.y2) {
-					const newWire: Wire = {
-						id: crypto.randomUUID(),
-						x1: seg.x1,
-						y1: seg.y1,
-						x2: seg.x2,
-						y2: seg.y2
-					};
-					schematic.wires = [...schematic.wires, newWire];
-				}
-			}
-
-			// If ending on an existing wire, create junction
-			maybeCreateJunctionOnWire(snapped);
-
-			// Continue from end point for chained wires
-			wireDraw = {
-				...wireDraw,
-				startPoint: snapped
-			};
-		}
-		render();
 	}
 
 	/** Create junction if point is on an existing wire (not at endpoint) */
 	function maybeCreateJunctionOnWire(point: Point) {
 		for (const wire of schematic.wires) {
 			if (isPointOnWireSegment(point, wire)) {
-				createJunctionAt(point);
+				dispatch({ type: 'CREATE_JUNCTION', pos: point });
 				return;
 			}
 		}
 	}
 
-	/** Check if point lies on wire segment (not at endpoints) */
-	function isPointOnWireSegment(point: Point, wire: Wire): boolean {
-		// Check if point is at an endpoint (no junction needed there)
-		if ((point.x === wire.x1 && point.y === wire.y1) ||
-			(point.x === wire.x2 && point.y === wire.y2)) {
-			return false;
-		}
-
-		// Check if point is on the line segment
-		// For Manhattan wires, this is simple: check if on horizontal or vertical segment
-		if (wire.x1 === wire.x2) {
-			// Vertical wire
-			if (point.x === wire.x1) {
-				const minY = Math.min(wire.y1, wire.y2);
-				const maxY = Math.max(wire.y1, wire.y2);
-				return point.y > minY && point.y < maxY;
-			}
-		} else if (wire.y1 === wire.y2) {
-			// Horizontal wire
-			if (point.y === wire.y1) {
-				const minX = Math.min(wire.x1, wire.x2);
-				const maxX = Math.max(wire.x1, wire.x2);
-				return point.x > minX && point.x < maxX;
-			}
-		}
-		return false;
-	}
-
-	/** Handle click in delete mode */
+	/** Handle click in delete mode - priority: junction > component > wire */
 	function handleDeleteClick(clickPos: Point) {
-		// Check for junction first
 		const junction = findJunctionAt(clickPos);
 		if (junction) {
-			schematic.junctions = schematic.junctions.filter(j => j.id !== junction.id);
-			render();
+			dispatch({
+				type: 'DELETE_AT',
+				target: {
+					componentIds: [],
+					wireIds: [],
+					junctionIds: [junction.id],
+					directiveIds: []
+				}
+			});
 			return;
 		}
 
 		const comp = findComponentAt(clickPos);
 		if (comp) {
-			schematic.components = schematic.components.filter(c => c.id !== comp.id);
-			render();
+			dispatch({
+				type: 'DELETE_AT',
+				target: {
+					componentIds: [comp.id],
+					wireIds: [],
+					junctionIds: [],
+					directiveIds: []
+				}
+			});
 			return;
 		}
 
 		const wire = findWireAt(clickPos);
 		if (wire) {
-			schematic.wires = schematic.wires.filter(w => w.id !== wire.id);
-			render();
+			dispatch({
+				type: 'DELETE_AT',
+				target: {
+					componentIds: [],
+					wireIds: [wire.id],
+					junctionIds: [],
+					directiveIds: []
+				}
+			});
 		}
 	}
 
-	/** Find junction at position */
-	function findJunctionAt(pos: Point, tolerance: number = 8): Junction | null {
-		for (const junction of schematic.junctions) {
-			const dist = Math.hypot(pos.x - junction.x, pos.y - junction.y);
-			if (dist <= tolerance) {
-				return junction;
-			}
-		}
-		return null;
-	}
-
-	/** Create a junction at the given position */
-	function createJunctionAt(pos: Point): boolean {
-		// Check if junction already exists at this position
-		const existing = schematic.junctions.find(j => j.x === pos.x && j.y === pos.y);
-		if (existing) return false;
-
-		const newJunction: Junction = {
-			id: crypto.randomUUID(),
-			x: pos.x,
-			y: pos.y
-		};
-		schematic.junctions = [...schematic.junctions, newJunction];
-		return true;
-	}
-
-	/** Handle click in duplicate mode - click on item to duplicate it */
-	function handleDuplicateClick(clickPos: Point, snapped: Point) {
+	/** Handle click in duplicate mode */
+	function handleDuplicateClick(clickPos: Point) {
 		const comp = findComponentAt(clickPos);
-		if (comp) {
-			// Duplicate component with offset
-			const offset = grid.size * 2;  // Offset by 2 grid units
-			const newComp: Component = {
-				id: crypto.randomUUID(),
-				type: comp.type,
-				x: snapped.x + offset,
-				y: snapped.y + offset,
-				rotation: comp.rotation,
-				mirror: comp.mirror,
-				attributes: { ...comp.attributes },
-				pins: comp.pins.map(p => ({ ...p }))
-			};
-
-			// Update instance name for the duplicate using correct SPICE prefix
-			if (newComp.attributes['InstName']) {
-				const count = (componentCounters[comp.type] || 0) + 1;
-				componentCounters[comp.type] = count;
-				const prefix = COMPONENT_PREFIX[comp.type] || '';
-				newComp.attributes['InstName'] = prefix ? `${prefix}${count}` : '';
-			}
-
-			schematic.components = [...schematic.components, newComp];
-			// Select the new component
-			selectedIds = new Set([newComp.id]);
-			selectedWireIds = new Set();
-			render();
-			return;
-		}
-
 		const wire = findWireAt(clickPos);
-		if (wire) {
-			// Duplicate wire with offset
-			const offset = grid.size * 2;
-			const newWire: Wire = {
-				id: crypto.randomUUID(),
-				x1: wire.x1 + offset,
-				y1: wire.y1 + offset,
-				x2: wire.x2 + offset,
-				y2: wire.y2 + offset
-			};
-			schematic.wires = [...schematic.wires, newWire];
-			selectedWireIds = new Set([newWire.id]);
-			selectedIds = new Set();
-			render();
-		}
-	}
-
-	/** Start probe (mousedown) - for voltage probes on wires/nodes */
-	function handleProbeMouseDown(clickPos: Point, snapped: Point) {
-		// First check if clicking on a component (for current probe)
-		const comp = findComponentAt(clickPos);
-		if (comp && comp.type !== 'ground') {
-			// Current probe - handle immediately on mousedown, complete on mouseup
-			probeState = {
-				isHolding: false, // false = component click, not wire
-				firstNode: snapped,
-				firstNodeName: null,
-				targetComponent: comp
-			};
-			return;
-		}
-
-		// Check for wire or node at position
-		const wire = findWireAt(snapped);
-		const nodeName = getNodeAtPosition(snapped);
-
-		if (wire || nodeName) {
-			probeState = {
-				isHolding: true, // true = voltage probe mode
-				firstNode: snapped,
-				firstNodeName: nodeName
-			};
-			render();
-		}
-	}
-
-	/** Complete probe (mouseup) - handles both single-click and differential */
-	function handleProbeMouseUp(clickPos: Point, snapped: Point) {
-		// Handle component current probe
-		if (probeState.targetComponent) {
-			const comp = probeState.targetComponent;
-			const instName = comp.attributes['InstName'] || comp.id;
-			addProbe('current', instName, comp.id);
-			probeState = { isHolding: false, firstNode: null, firstNodeName: null, targetComponent: null };
-			render();
-			return;
-		}
-
-		// Handle voltage probe (wire/node click)
-		if (probeState.isHolding && probeState.firstNode) {
-			const secondNodeName = getNodeAtPosition(snapped);
-			const firstNodeName = probeState.firstNodeName || getNodeAtPosition(probeState.firstNode);
-
-			// Check if this is a drag (differential) or single click
-			const dragDist = Math.hypot(snapped.x - probeState.firstNode.x, snapped.y - probeState.firstNode.y);
-			const isDrag = dragDist > 20; // More than 20 units = drag
-
-			if (isDrag && secondNodeName && firstNodeName && secondNodeName !== firstNodeName) {
-				// Differential voltage probe
-				addProbe('voltage-diff', firstNodeName, undefined, secondNodeName);
-			} else if (firstNodeName) {
-				// Single click - create single voltage probe
-				addProbe('voltage', firstNodeName);
-			}
-		}
-		probeState = { isHolding: false, firstNode: null, firstNodeName: null, targetComponent: null };
-		render();
+		dispatch({
+			type: 'DUPLICATE_AT',
+			pos: clickPos,
+			componentId: comp?.id,
+			wireId: wire?.id
+		});
 	}
 
 	/** Get node name at a position (from nodeLabels) - works on wires too */
@@ -1037,14 +545,12 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 			return null;
 		}
 
-		// Use findWireAt (same as visual selection) instead of pointOnWire
 		const clickedWire = findWireAt(pos);
 		if (clickedWire) {
 			const nodeName = findNodeForWire(clickedWire);
 			if (nodeName) return nodeName;
 		}
 
-		// Fallback: check if position is close to a node label directly
 		let closest: { name: string; dist: number } | null = null;
 		for (const label of schematic.nodeLabels) {
 			const dist = Math.hypot(label.x - pos.x, label.y - pos.y);
@@ -1055,42 +561,9 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		return closest?.name || null;
 	}
 
-	/** Find the node name for a wire by using connectivity analysis */
-	function findNodeForWire(startWire: Wire): string | null {
-		const connectivity = analyzeConnectivity(schematic);
-
-		const wireEndpoints = [
-			{ x: startWire.x1, y: startWire.y1 },
-			{ x: startWire.x2, y: startWire.y2 }
-		];
-
-		// Find which net contains this wire's endpoints
-		for (const net of connectivity.nets) {
-			for (const ep of wireEndpoints) {
-				for (const netPoint of net.points) {
-					if (pointsEqual(ep, netPoint)) {
-						return net.name;
-					}
-				}
-			}
-		}
-
-		// Also check if any junction on this wire is part of a net
-		for (const junc of schematic.junctions) {
-			const jp = { x: junc.x, y: junc.y };
-			if (pointOnWire(jp, startWire)) {
-				for (const net of connectivity.nets) {
-					for (const netPoint of net.points) {
-						if (pointsEqual(jp, netPoint)) {
-							return net.name;
-						}
-					}
-				}
-			}
-		}
-
-		return null;
-	}
+	// Wrapper for findNodeForWire
+	const findNodeForWire = (startWire: Wire): string | null =>
+		findNodeForWireUtil(startWire, schematic);
 
 	/** Add a probe (calls onprobe callback) */
 	function addProbe(type: ProbeType, node1: string, componentId?: string, node2?: string) {
@@ -1100,182 +573,77 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 				? `V(${node1},${node2})`
 				: `V(${node1})`;
 
-		// Call the onprobe callback if provided
 		if (onprobe) {
 			onprobe({ type, node1, node2, componentId, label });
 		}
 	}
 
-	/** Find component at position */
-	function findComponentAt(pos: Point): Component | null {
-		for (let i = schematic.components.length - 1; i >= 0; i--) {
-			const comp = schematic.components[i];
-			if (hitTestComponent(comp, pos.x, pos.y)) {
-				return comp;
-			}
-		}
-		return null;
-	}
-
-	/** Find wire at position */
-	function findWireAt(pos: Point, tolerance: number = 5): Wire | null {
-		for (let i = schematic.wires.length - 1; i >= 0; i--) {
-			const wire = schematic.wires[i];
-			if (hitTestWire(wire, pos.x, pos.y, tolerance)) {
-				return wire;
-			}
-		}
-		return null;
-	}
-
-	/** Hit test for wire segment */
-	function hitTestWire(wire: Wire, px: number, py: number, tolerance: number): boolean {
-		// Distance from point to line segment
-		const dx = wire.x2 - wire.x1;
-		const dy = wire.y2 - wire.y1;
-		const len2 = dx * dx + dy * dy;
-
-		if (len2 === 0) {
-			// Wire is a point
-			return Math.hypot(px - wire.x1, py - wire.y1) <= tolerance;
-		}
-
-		// Project point onto line
-		const t = Math.max(0, Math.min(1, ((px - wire.x1) * dx + (py - wire.y1) * dy) / len2));
-		const projX = wire.x1 + t * dx;
-		const projY = wire.y1 + t * dy;
-
-		return Math.hypot(px - projX, py - projY) <= tolerance;
-	}
-
-	function placeComponent() {
-		if (!placingType) return;
-
-		const snapped = snapToGrid(schematicPos);
-		const def = COMPONENT_DEFS[placingType];
-
-		// Generate instance name using correct SPICE prefix
-		// e.g., inductor -> L, current -> I, resistor -> R
-		const prefix = COMPONENT_PREFIX[placingType] || '';
-		const count = (componentCounters[placingType] || 0) + 1;
-		componentCounters[placingType] = count;
-		const instName = prefix ? `${prefix}${count}` : '';
-
-		// Create new component
-		const newComp: Component = {
-			id: crypto.randomUUID(),
-			type: placingType,
-			x: snapped.x,
-			y: snapped.y,
-			rotation: placingRotation,
-			mirror: placingMirror,
-			attributes: {
-				InstName: instName,
-				Value: getDefaultValue(placingType)
-			},
-			pins: def.pins.map((p, i) => ({ ...p, id: `${i}` }))
-		};
-
-		schematic.components = [...schematic.components, newComp];
-		render();
-	}
-
-	function getDefaultValue(type: ComponentType): string {
-		switch (type) {
-			case 'resistor': return '1k';
-			case 'capacitor': return '1u';
-			case 'inductor': return '1m';
-			case 'voltage': return 'DC 5';
-			case 'current': return 'DC 1m';
-			case 'diode': return 'D';
-			case 'npn': case 'pnp': return '2N2222';
-			case 'nmos': case 'pmos': return 'NMOS';
-			default: return '';
-		}
-	}
-
 	function handleMouseMove(e: MouseEvent) {
 		const dpr = getDpr();
-		mousePos = { x: e.offsetX, y: e.offsetY };
-		schematicPos = screenToSchematic(e.offsetX, e.offsetY);
+		const schematicPos = screenToSchematic(e.offsetX, e.offsetY);
+		const snappedPos = snapToGrid(schematicPos);
+		const { modeState } = editorState;
 
-		// Start dragging if mouse moved with button held (dragStart set but not isDragging yet)
-		if (dragStart && !isDragging && (e.buttons & 1 || e.buttons & 4)) {
-			const dx = Math.abs(e.offsetX - dragStart.x);
-			const dy = Math.abs(e.offsetY - dragStart.y);
-			// Only start drag if moved more than 3 pixels (prevents accidental drags)
-			if (dx > 3 || dy > 3) {
-				isDragging = true;
-			}
+		// Update mouse position in state
+		dispatch({ type: 'UPDATE_MOUSE_POS', screenPos: { x: e.offsetX, y: e.offsetY }, schematicPos });
+
+		// Calculate screen delta for view dragging
+		const screenDelta = lastScreenPos
+			? { x: (e.offsetX - lastScreenPos.x) * dpr, y: (e.offsetY - lastScreenPos.y) * dpr }
+			: { x: 0, y: 0 };
+
+		// Handle view dragging
+		if (modeState.type === 'dragging-view' && (e.buttons & 1 || e.buttons & 4)) {
+			dispatch({ type: 'PAN', dx: screenDelta.x, dy: screenDelta.y });
+			lastScreenPos = { x: e.offsetX, y: e.offsetY };
+			return;
 		}
 
 		// Handle moving selected items
-		if (isMoving && moveStartSchematicPos && isDragging) {
-			const currentSnapped = snapToGrid(schematicPos);
-			const dx = currentSnapped.x - moveStartSchematicPos.x;
-			const dy = currentSnapped.y - moveStartSchematicPos.y;
-
-			if (dx !== 0 || dy !== 0) {
-				// Move selected components
-				for (const comp of schematic.components) {
-					if (selectedIds.has(comp.id)) {
-						comp.x += dx;
-						comp.y += dy;
-						// Also update pin positions
-						for (const pin of comp.pins) {
-							pin.x += dx;
-							pin.y += dy;
-						}
-					}
-				}
-
-				// Move selected wires
-				for (const wire of schematic.wires) {
-					if (selectedWireIds.has(wire.id)) {
-						wire.x1 += dx;
-						wire.y1 += dy;
-						wire.x2 += dx;
-						wire.y2 += dy;
-					}
-				}
-
-				// Move selected directives
-				if (schematic.directives) {
-					for (const directive of schematic.directives) {
-						if (selectedDirectiveIds.has(directive.id)) {
-							if (directive.x !== undefined) directive.x += dx;
-							if (directive.y !== undefined) directive.y += dy;
-						}
-					}
-				}
-
-				// Update start position for next delta
-				moveStartSchematicPos = currentSnapped;
-			}
-		} else if (isDragging && dragStart && !isMoving) {
-			// Pan the view (only when not moving items)
-			const dx = (e.offsetX - dragStart.x) * dpr;
-			const dy = (e.offsetY - dragStart.y) * dpr;
-			view.offsetX += dx;
-			view.offsetY += dy;
-			dragStart = { x: e.offsetX, y: e.offsetY };
+		if (modeState.type === 'moving' && modeState.startPos && (e.buttons & 1)) {
+			dispatch({ type: 'MOVE_SELECTED', delta: { x: snappedPos.x - modeState.startPos.x, y: snappedPos.y - modeState.startPos.y } });
 		}
-		render();
+
+		lastScreenPos = { x: e.offsetX, y: e.offsetY };
 	}
 
 	function handleMouseUp(e: MouseEvent) {
+		const { modeState } = editorState;
+		const clickPos = screenToSchematic(e.offsetX, e.offsetY);
+		const snapped = snapToGrid(clickPos);
+
 		// Handle probe mode mouseup
-		if (mode === 'probe') {
-			const clickPos = screenToSchematic(e.offsetX, e.offsetY);
-			const snapped = snapToGrid(clickPos);
-			// handleProbeMouseUp handles both single-click and differential probes
-			handleProbeMouseUp(clickPos, snapped);
+		if (modeState.type === 'probing' && modeState.phase === 'holding-first' && modeState.firstNode) {
+			const secondNodeName = getNodeAtPosition(snapped);
+			const dragDist = Math.hypot(snapped.x - modeState.firstNode.x, snapped.y - modeState.firstNode.y);
+			const isDrag = dragDist > 20;
+
+			if (isDrag && secondNodeName && modeState.firstNodeName && secondNodeName !== modeState.firstNodeName) {
+				// Differential voltage probe
+				addProbe('voltage-diff', modeState.firstNodeName, undefined, secondNodeName);
+			} else if (modeState.firstNodeName) {
+				// Single voltage probe
+				addProbe('voltage', modeState.firstNodeName);
+			}
+			dispatch({ type: 'PROBE_COMPLETE', pos: snapped, nodeName: secondNodeName });
+		} else if (modeState.type === 'probing' && modeState.targetComponentId) {
+			// Current probe on component
+			const comp = schematic.components.find(c => c.id === modeState.targetComponentId);
+			if (comp) {
+				const instName = comp.attributes['InstName'] || comp.id;
+				addProbe('current', instName, comp.id);
+			}
+			dispatch({ type: 'PROBE_COMPLETE', pos: snapped, nodeName: null });
 		}
 
-		isDragging = false;
-		dragStart = null;
-		isMoving = false;
-		moveStartSchematicPos = null;
+		// End view dragging or moving
+		if (modeState.type === 'dragging-view') {
+			dispatch({ type: 'END_VIEW_DRAG' });
+		} else if (modeState.type === 'moving') {
+			dispatch({ type: 'END_MOVE' });
+		}
+
+		lastScreenPos = null;
 	}
 
 	function handleDoubleClick(e: MouseEvent) {
@@ -1299,171 +667,99 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 		e.preventDefault();
 		const dpr = getDpr();
 		const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-		const newScale = Math.max(0.1, Math.min(10, view.scale * zoomFactor));
-
-		// Zoom toward mouse position
-		const mx = e.offsetX * dpr;
-		const my = e.offsetY * dpr;
-		view.offsetX = mx - (mx - view.offsetX) * (newScale / view.scale);
-		view.offsetY = my - (my - view.offsetY) * (newScale / view.scale);
-		view.scale = newScale;
-
-		render();
+		dispatch({ type: 'ZOOM', factor: zoomFactor, center: { x: e.offsetX * dpr, y: e.offsetY * dpr } });
 	}
 
 	function handleKeyDown(e: KeyboardEvent) {
+		const { modeState, selection } = editorState;
+
 		// Escape cancels current operation and returns to select mode
 		if (e.key === 'Escape') {
-			cancelCurrentOperation();
+			dispatch({ type: 'CANCEL' });
 			return;
 		}
 
 		// Mode shortcuts (number keys mapped from F-keys)
-		// 3 = Wire (F3), 5 = Delete (F5), 7 = Move (F7)
 		if (!e.ctrlKey && !e.metaKey && !e.altKey) {
 			const modeKey = MODE_SHORTCUTS[e.key];
 			if (modeKey) {
-				setMode(modeKey);
+				dispatch({ type: 'SET_MODE', mode: modeKey as 'select' | 'wire' | 'delete' | 'duplicate' | 'move' | 'probe' });
 				return;
 			}
 
-			// W key also enters wire mode (LTSpice shortcut)
+			// W key also enters wire mode
 			if (e.key === 'w' || e.key === 'W') {
-				setMode('wire');
+				dispatch({ type: 'SET_MODE', mode: 'wire' });
 				return;
 			}
 		}
 
 		// Space toggles wire direction while drawing
-		if (e.key === ' ' && mode === 'wire' && wireDraw.isDrawing) {
+		if (e.key === ' ' && modeState.type === 'drawing-wire') {
 			e.preventDefault();
-			wireDraw = {
-				...wireDraw,
-				direction: wireDraw.direction === 'horizontal-first' ? 'vertical-first' : 'horizontal-first'
-			};
-			render();
+			dispatch({ type: 'TOGGLE_WIRE_DIRECTION' });
 			return;
 		}
 
-		// Component shortcuts - can switch component while placing
+		// Component shortcuts
 		if (!e.ctrlKey && !e.metaKey) {
 			const compDef = getComponentByShortcut(e.key);
 			if (compDef) {
-				placingType = compDef.type;
-				placingRotation = 0;
-				placingMirror = false;
-				mode = 'place';
-				wireDraw = { ...DEFAULT_WIRE_DRAW };
-				render();
+				dispatch({ type: 'START_PLACING', componentType: compDef.type as ComponentType });
 				return;
 			}
 		}
 
-		// Ctrl+R to rotate while placing or rotate selected
+		// Ctrl+R to rotate
 		if ((e.key === 'r' || e.key === 'R') && (e.ctrlKey || e.metaKey)) {
 			e.preventDefault();
-			if (mode === 'place' && placingType) {
-				placingRotation = nextRotation(placingRotation);
-				render();
-				return;
+			if (modeState.type === 'placing') {
+				dispatch({ type: 'ROTATE_PLACING' });
+			} else if (selection.componentIds.size > 0) {
+				dispatch({ type: 'ROTATE_SELECTED' });
 			}
-			// Rotate selected components
-			if (selectedIds.size > 0) {
-				for (const comp of schematic.components) {
-					if (selectedIds.has(comp.id)) {
-						comp.rotation = nextRotation(comp.rotation);
-					}
-				}
-				render();
-				return;
-			}
+			return;
 		}
 
 		// Ctrl+E to mirror
 		if ((e.key === 'e' || e.key === 'E') && (e.ctrlKey || e.metaKey)) {
 			e.preventDefault();
-			if (mode === 'place' && placingType) {
-				placingMirror = !placingMirror;
-				render();
-				return;
+			if (modeState.type === 'placing') {
+				dispatch({ type: 'MIRROR_PLACING' });
+			} else if (selection.componentIds.size > 0) {
+				dispatch({ type: 'MIRROR_SELECTED' });
 			}
-			if (selectedIds.size > 0) {
-				for (const comp of schematic.components) {
-					if (selectedIds.has(comp.id)) {
-						comp.mirror = !comp.mirror;
-					}
-				}
-				render();
-				return;
-			}
+			return;
 		}
 
-		// Delete selected components, wires, and directives
+		// Delete selected
 		if (e.key === 'Delete' || e.key === 'Backspace') {
-			if (selectedIds.size > 0 || selectedWireIds.size > 0 || selectedDirectiveIds.size > 0) {
-				schematic.components = schematic.components.filter(c => !selectedIds.has(c.id));
-				schematic.wires = schematic.wires.filter(w => !selectedWireIds.has(w.id));
-				if (schematic.directives) {
-					schematic.directives = schematic.directives.filter(d => !selectedDirectiveIds.has(d.id));
-				}
-				selectedIds = new Set();
-				selectedWireIds = new Set();
-				selectedDirectiveIds = new Set();
-				render();
+			if (selection.componentIds.size > 0 || selection.wireIds.size > 0 || selection.directiveIds.size > 0) {
+				dispatch({ type: 'DELETE_SELECTED' });
 				return;
 			}
 		}
 
-		// Grid toggle (Ctrl+G or Shift+G to avoid conflict with Ground)
+		// Grid toggle
 		if ((e.key === 'g' || e.key === 'G') && (e.ctrlKey || e.shiftKey)) {
 			e.preventDefault();
-			grid.visible = !grid.visible;
-			render();
+			dispatch({ type: 'TOGGLE_GRID' });
 			return;
 		}
 
 		// View controls
-		if (e.key === 'Home' || (e.key === 'f' && mode !== 'place')) {
-			view = { offsetX: canvas.width / 2, offsetY: canvas.height / 2, scale: 1 };
-			render();
+		if (e.key === 'Home' || (e.key === 'f' && modeState.type !== 'placing')) {
+			dispatch({ type: 'RESET_VIEW', canvasWidth: canvas.width, canvasHeight: canvas.height });
 			return;
 		}
 		if (e.key === '+' || e.key === '=') {
-			view.scale = Math.min(10, view.scale * 1.2);
-			render();
+			dispatch({ type: 'ZOOM', factor: 1.2, center: { x: canvas.width / 2, y: canvas.height / 2 } });
 			return;
 		}
 		if (e.key === '-' || e.key === '_') {
-			view.scale = Math.max(0.1, view.scale / 1.2);
-			render();
+			dispatch({ type: 'ZOOM', factor: 1 / 1.2, center: { x: canvas.width / 2, y: canvas.height / 2 } });
 			return;
 		}
-	}
-
-	/** Set editor mode */
-	function setMode(newMode: EditorMode) {
-		mode = newMode;
-		placingType = null;
-		wireDraw = { ...DEFAULT_WIRE_DRAW };
-		selectedIds = new Set();
-		selectedWireIds = new Set();
-		selectedDirectiveIds = new Set();
-		isMoving = false;
-		moveStartSchematicPos = null;
-		render();
-	}
-
-	/** Cancel current operation and return to select mode */
-	function cancelCurrentOperation() {
-		placingType = null;
-		wireDraw = { ...DEFAULT_WIRE_DRAW };
-		mode = 'select';
-		selectedIds = new Set();
-		selectedWireIds = new Set();
-		selectedDirectiveIds = new Set();
-		isMoving = false;
-		moveStartSchematicPos = null;
-		render();
 	}
 
 	// Re-render when schematic changes
@@ -1475,14 +771,19 @@ import { pointOnWire, pointsEqual, analyzeConnectivity } from '$lib/netlist/conn
 
 	/** Get cursor style based on current mode */
 	function getCursorStyle(): string {
-		if (isDragging) return 'grabbing';
-		switch (mode) {
-			case 'delete': return 'not-allowed';
-			case 'wire': return 'crosshair';
-			case 'move': return 'move';
-			case 'place': return 'copy';
-			case 'duplicate': return 'copy';
-			default: return 'default';
+		const { modeState } = editorState;
+		if (modeState.type === 'dragging-view') return 'grabbing';
+		switch (modeState.type) {
+			case 'placing': return 'copy';
+			case 'drawing-wire': return 'crosshair';
+			case 'moving': return 'move';
+			case 'probing': return 'crosshair';
+			default:
+				// Check for delete/duplicate in idle mode
+				const mode = getEditorMode(modeState);
+				if (mode === 'delete') return 'not-allowed';
+				if (mode === 'duplicate') return 'copy';
+				return 'default';
 		}
 	}
 </script>
