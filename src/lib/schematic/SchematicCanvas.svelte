@@ -8,7 +8,6 @@
 
 	import {
 		screenToSchematic as screenToSchematicUtil,
-		schematicToScreen as schematicToScreenUtil,
 		snapToGrid as snapToGridUtil,
 		getWireSegments,
 		isPointOnWireSegment,
@@ -138,9 +137,6 @@
 	// Wrapper functions that use component state
 	const screenToSchematic = (sx: number, sy: number): Point =>
 		screenToSchematicUtil(sx, sy, view, getDpr());
-
-	const schematicToScreen = (px: number, py: number): Point =>
-		schematicToScreenUtil(px, py, view, getDpr());
 
 	const snapToGrid = (p: Point): Point =>
 		snapToGridUtil(p, grid.size, grid.snapEnabled);
@@ -719,7 +715,7 @@
 	}
 
 	/** Complete probe (mouseup) - handles both single-click and differential */
-	function handleProbeMouseUp(clickPos: Point, snapped: Point) {
+	function handleProbeMouseUp(_clickPos: Point, snapped: Point) {
 		// Handle component current probe
 		if (probeState.targetComponent) {
 			const comp = probeState.targetComponent;

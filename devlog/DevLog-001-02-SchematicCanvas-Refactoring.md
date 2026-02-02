@@ -130,7 +130,23 @@ interface DrawContext {
   - Created src/lib/schematic/canvas/drawing.ts (217 lines)
   - Extracted: drawGrid, drawOrigin, drawWires, drawJunctions, drawNodeLabels, drawDirectives
   - Note: drawComponents and drawProbeCursor remain in main component due to tight coupling with placement state and probe state
-- [ ] Phase 6: Final cleanup
+- [x] Phase 6: Final cleanup (1,183 -> 1,179 lines, -4 lines)
+  - Removed unused schematicToScreen wrapper and import
+  - Fixed unused parameter warning in handleProbeMouseUp
+
+## Final Results
+
+**Total reduction: 1,538 -> 1,179 lines (-359 lines, -23%)**
+
+### Module breakdown:
+- `SchematicCanvas.svelte`: 1,179 lines (main component with state and event handlers)
+- `canvas/geometry.ts`: 164 lines (coordinate transforms, snapping, wire routing)
+- `canvas/hit-testing.ts`: 127 lines (element detection at positions)
+- `canvas/probes.ts`: 132 lines (probe drawing and node finding)
+- `canvas/drawing.ts`: 217 lines (grid, wires, junctions, labels, directives)
+- `canvas/index.ts`: 10 lines (re-exports)
+
+**Total canvas utilities: 650 lines**
 
 ## Testing Strategy
 
